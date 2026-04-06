@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <title>산책로 추천 테스트 (임시 UI)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Leaflet 지도 라이브러리 (무료/API Key 불필요) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; }
+        #header { padding: 15px; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 1000; display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap;}
+        #map { flex: 1; width: 100%; }
+        input[type="text"] { padding: 10px; width: 300px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); }
+        button { padding: 10px 20px; font-size: 15px; font-weight: bold; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
+        button:hover { background: #0056b3; }
+        .loading { font-size: 14px; color: #666; display: none; font-weight: bold; margin-left: 10px; }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <label><b>내 위치 검색:</b></label>
+        <input type="text" id="addressInput" placeholder="예: 강동구 성내동" value="강동구 성내동">
+        <button onclick="searchAndRecommend()">주소로 추천받기</button>
+        <div id="status" class="loading">요청 중...</div>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // 초기 강동구 중앙 뷰 세팅
+        var map = L.map('map').setView([37.5301, 127.1238], 13); 
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        var markersGroup = L.layerGroup().addTo(map);
+
+        // 내 위치 마커 아이콘 설정 (빨간색)
+        var userIcon = L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34]
+        });
+
+        async function searchAndRecommend() {
+            var addr = document.getElementById('addressInput').value;
+            var status = document.getElementById('status');
+            if(!addr) { alert('주소를 먼저 입력해주세요.'); return; }
+            
+            status.style.display = 'block';
+            status.innerText = '주소 변환 중...';
+            markersGroup.clearLayers();
+
+            try {
+                // 1. 주소 -> 좌표 (오픈스트리트맵 Geocoding, 테스트용 무료 API)
+                var geoUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}`;
+                var res = await fetch(geoUrl, { headers: { 'Accept-Language': 'ko' }});
+                var geoData = await res.json();
+
+                if(!geoData || geoData.length === 0) {
+                    alert('주소를 좌표로 변환하지 못했습니다. "동" 이름 (예: 명일동, 천호동)이나 유명한 장소로 검색해주세요.');
+                    status.style.display = 'none';
+                    return;
+                }
+
+                var lat = parseFloat(geoData[0].lat);
+                var lng = parseFloat(geoData[0].lon);
+
+                map.setView([lat, lng], 14);
+                
+                L.marker([lat, lng], {icon: userIcon}).addTo(markersGroup)
+                    .bindPopup("<b>현재 내 위치 기준점</b><br>" + addr).openPopup();
+
+                status.innerText = '산책로 추천 데이터 요청 중...';
+
+                // 2. 작성한 FastAPI 백엔드로 5개 추천 요청
+                var apiRes = await fetch('/api/trails/recommend', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        user_lat: lat,
+                        user_lng: lng,
+                        max_distance_km: 10.0,
+                        limit: 5  // 산책로 5개 제한
+                    })
+                });
+                
+                if(!apiRes.ok) throw new Error("API 서버 응답 오류. 콘솔을 확인하세요.");
+                
+                var data = await apiRes.json();
+                status.style.display = 'none';
+
+                if(!data.items || data.items.length === 0) {
+                    alert("주변 10km 이내에 추천할 산책로가 없습니다.");
+                    return;
+                }
+
+                // 3. 응답받은 산책로 5개를 지도에 표시
+                var pathBounds = [];
+                data.items.forEach((trail, index) => {
+                    var startPoint = [trail.start_lat, trail.start_lng];
+                    
+                    var popupHtml = `<div style="text-align:center;">
+                        <b>[Top ${index + 1}] ${trail.trail_name}</b><br>
+                        나와의 거리: 약 ${trail.distance_from_user} km<br>
+                        소요 시간: 약 ${trail.time_minute}분 (${trail.length_km} km)
+                    </div>`;
+
+                    var marker = L.marker(startPoint).addTo(markersGroup).bindPopup(popupHtml);
+                    pathBounds.push(startPoint);
+
+                    // 시작점과 끝점을 잇는 대략적인 선 (Start/End 데이터가 존재할 때)
+                    if(trail.end_lat && trail.end_lng) {
+                        var endPoint = [trail.end_lat, trail.end_lng];
+                        var lineData = [startPoint, endPoint];
+                        L.polyline(lineData, { color: '#007bff', weight: 5, opacity: 0.7 })
+                            .addTo(markersGroup)
+                            .bindPopup(trail.trail_name + " 코스선");
+                        pathBounds.push(endPoint);
+                    }
+                });
+
+                // 내 위치와 추천 산책로들이 한눈에 보이게 줌 조정
+                pathBounds.push([lat, lng]);
+                map.fitBounds(pathBounds, { padding: [50, 50] });
+
+            } catch (err) {
+                console.error(err);
+                alert("에러가 발생했습니다: " + err.message);
+                status.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
