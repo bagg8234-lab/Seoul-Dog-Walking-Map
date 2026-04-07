@@ -24,6 +24,30 @@
         <div id="status" class="loading">요청 중...</div>
     </div>
     <div id="map"></div>
+    <div style="position: absolute; top: 15px; left: 60px; z-index: 1000;">
+        <button id="toggleHazardsBtn" style="background:#dc3545; font-size:14px; padding:10px 15px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.3); border:none; color:white; font-weight:bold; cursor:pointer;" onclick="toggleHazards()">⚠️ 주변 돌발/재난 상황 켜기</button>
+    </div>
+
+    <div id="disasterWidget" style="display: none; position: absolute; top: 70px; left: 60px; z-index: 1000; background: rgba(220,53,69,0.9); color:white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-size: 14px; max-width: 300px; max-height: 400px; overflow-y:auto; line-height: 1.6;">
+        <div style="font-weight: 900; margin-bottom: 8px; font-size: 16px; border-bottom: 2px solid white; padding-bottom: 4px;">🚨 최신 긴급 재난 알림</div>
+        <div id="disasterContent" style="font-weight:500;">불러오는 중...</div>
+    </div>
+    <div style="position: absolute; top: 80px; right: 10px; z-index: 1000; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.3); font-size: 14px;">
+        <div style="font-weight: bold; margin-bottom: 8px;">💡 추천 보기 필터</div>
+        <label style="display:block; margin-bottom:4px;"><input type="radio" name="view_type" value="all" checked> 🟡 모두 보기 (7개)</label>
+        <label style="display:block; margin-bottom:4px;"><input type="radio" name="view_type" value="park"> 🌲 공원만 (5개)</label>
+        <label style="display:block; margin-bottom:12px;"><input type="radio" name="view_type" value="trail"> 🔵 산책로만 (5개)</label>
+        <div style="border-top:1px solid #eee; margin-top:8px; padding-top:8px;"></div>
+        <label style="display:block; color:#444;">
+            <input type="checkbox" id="useApiCheck"> 📡 실시간 날씨/혼잡도 불러오기<br>
+            <span style="font-size:11px; color:#888; margin-left:22px;">(체크 시 서울시 공공 API 사용량 차감)</span>
+        </label>
+    </div>
+    
+    <div id="weatherWidget" style="display: none; position: absolute; bottom: 30px; left: 10px; z-index: 1000; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 14px; min-width: 160px; line-height: 1.6;">
+        <div style="font-weight: 900; color: #111; margin-bottom: 8px; font-size: 16px; border-bottom: 2px solid #007bff; padding-bottom: 4px;">🌦 주변 실시간 날씨</div>
+        <div id="weatherContent" style="color: #444; font-weight:500;">불러오는 중...</div>
+    </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
@@ -42,6 +66,73 @@
             shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
             iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34]
         });
+
+        // 돌발정보 그룹 및 상태
+        var hazardsGroup = L.layerGroup().addTo(map);
+        var isHazardsVisible = false;
+        
+        var hazardIcon = L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34]
+        });
+
+        async function toggleHazards() {
+            var btn = document.getElementById('toggleHazardsBtn');
+            var dWidget = document.getElementById('disasterWidget');
+            var dContent = document.getElementById('disasterContent');
+
+            if (isHazardsVisible) {
+                hazardsGroup.clearLayers();
+                isHazardsVisible = false;
+                btn.innerText = "⚠️ 주변 돌발/재난 상황 켜기";
+                btn.style.background = "#dc3545";
+                dWidget.style.display = 'none';
+                return;
+            }
+            
+            btn.innerText = "로딩 중...";
+            btn.style.background = "#6c757d";
+            
+            try {
+                var res = await fetch('/api/trails/hazards');
+                var data = await res.json();
+                
+                hazardsGroup.clearLayers();
+                
+                if(data.incidents && data.incidents.length > 0) {
+                    data.incidents.forEach(inc => {
+                        var popup = `<b>🚧 [${inc.acc_type}] 방해/통제 구간</b><br>${inc.acc_info}`;
+                        L.marker([inc.lat, inc.lng], {icon: hazardIcon}).addTo(hazardsGroup).bindPopup(popup);
+                    });
+                }
+                
+                if(data.disasters && data.disasters.length > 0) {
+                    var htmlList = "";
+                    data.disasters.forEach(msg => {
+                        htmlList += `<div style="margin-bottom:10px; background:rgba(0,0,0,0.2); padding:8px; border-radius:6px;">
+                            <div style="font-size:11px; color:#f8d7da;">${msg.crt_dt} | ${msg.rcptn_rgn_nm}</div>
+                            <div style="font-weight:bold;">[${msg.dst_se_nm}] ${msg.msg_cn}</div>
+                        </div>`;
+                    });
+                    dContent.innerHTML = htmlList;
+                    dWidget.style.display = 'block';
+                } else {
+                    dContent.innerHTML = "최근 발령된 재난/안전 문자가 없습니다.";
+                    dWidget.style.display = 'block';
+                }
+                
+                isHazardsVisible = true;
+                btn.innerText = "⚠️ 재난 상황 끄기";
+                btn.style.background = "#28a745";
+                
+            } catch(err) {
+                console.error(err);
+                alert("정보를 불러오지 못했습니다.");
+                btn.innerText = "⚠️ 주변 돌발/재난 상황 켜기";
+                btn.style.background = "#dc3545";
+            }
+        }
 
         async function searchAndRecommend() {
             var addr = document.getElementById('addressInput').value;
@@ -72,9 +163,19 @@
                 L.marker([lat, lng], {icon: userIcon}).addTo(markersGroup)
                     .bindPopup("<b>현재 내 위치 기준점</b><br>" + addr).openPopup();
 
-                status.innerText = '산책로 추천 데이터 요청 중...';
+                // 선택된 보기 필터(view_type) 가져오기 및 limit 동적 결정
+                var viewTypeOpts = document.getElementsByName('view_type');
+                var selectedViewType = "all";
+                for (var i = 0; i < viewTypeOpts.length; i++) {
+                    if (viewTypeOpts[i].checked) { selectedViewType = viewTypeOpts[i].value; break; }
+                }
+                var targetLimit = (selectedViewType === "all") ? 7 : 5;
+                
+                var isApiUsed = document.getElementById('useApiCheck').checked;
 
-                // 2. 작성한 FastAPI 백엔드로 5개 추천 요청
+                status.innerText = '산책로/공원 추천 데이터 요청 중...';
+
+                // 2. 작성한 FastAPI 백엔드로 추천 요청 (limit과 view_type 동적 할당)
                 var apiRes = await fetch('/api/trails/recommend', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -82,7 +183,9 @@
                         user_lat: lat,
                         user_lng: lng,
                         max_distance_km: 10.0,
-                        limit: 5  // 산책로 5개 제한
+                        limit: targetLimit,
+                        view_type: selectedViewType,
+                        use_realtime_api: isApiUsed
                     })
                 });
                 
@@ -96,37 +199,86 @@
                     return;
                 }
 
-                // 3. 응답받은 산책로 5개를 지도에 표시
+                // 2-1. 날씨 데이터 렌더링
+                var wWidget = document.getElementById('weatherWidget');
+                var wContent = document.getElementById('weatherContent');
+                if (data.weather_temp) {
+                    var pm10Val = parseInt(data.weather_pm10) || 0;
+                    var pmColor = (pm10Val <= 30) ? "royalblue" : (pm10Val <= 80) ? "mediumseagreen" : (pm10Val <= 150) ? "darkorange" : "crimson";
+                    var pmText = (pm10Val <= 30) ? "좋음" : (pm10Val <= 80) ? "보통" : (pm10Val <= 150) ? "나쁨" : "매우 나쁨";
+                    
+                    wWidget.style.display = "block";
+                    wContent.innerHTML = `
+                        <b>기온:</b> <span style="color:#e63946; font-size:16px;">${data.weather_temp}℃</span><br>
+                        <b>미세먼지:</b> <span style="color:${pmColor}; font-weight:900;">${pmText}</span> (${data.weather_pm10})<br>
+                        <b>상태:</b> ${data.weather_msg || '알수없음'}
+                    `;
+                } else {
+                    wWidget.style.display = "none";
+                }
+
+                // 추천 공원 마커 아이콘 설정 (초록색)
+                var parkIcon = L.icon({
+                    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+                    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                    iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34]
+                });
+
+                // 3. 응답받은 추천 목록을 지도에 표시
                 var pathBounds = [];
                 data.items.forEach((trail, index) => {
                     var startPoint = [trail.start_lat, trail.start_lng];
                     
-                    var popupHtml = `<div style="text-align:center;">
-                        <b>[Top ${index + 1}] ${trail.trail_name}</b><br>
-                        나와의 거리: 약 ${trail.distance_from_user} km<br>
-                        소요 시간: 약 ${trail.time_minute}분 (${trail.length_km} km)
-                    </div>`;
-
-                    var marker = L.marker(startPoint).addTo(markersGroup).bindPopup(popupHtml);
-                    pathBounds.push(startPoint);
-
-                    // 4. SHP 데이터에서 온 Polyline (실제 궤적)이 존재할 경우
-                    if(trail.polyline && trail.polyline.length > 0) {
-                        L.polyline(trail.polyline, { color: '#007bff', weight: 6, opacity: 0.8 })
-                            .addTo(markersGroup)
-                            .bindPopup(trail.trail_name + " 코스선 (SHP 기반)");
-                        
-                        // 바운더리를 폴리라인 기준으로 넓힘
-                        trail.polyline.forEach(p => pathBounds.push(p));
+                    // 공통 혼잡도 뱃지 처리 로직
+                    var congestionBadge = "";
+                    if (trail.congestion_lvl) {
+                        var color = (trail.congestion_lvl === "여유") ? "forestgreen" : 
+                                    (trail.congestion_lvl.includes("보통")) ? "darkorange" : "crimson";
+                        congestionBadge = `<br><div style="margin-top:8px; text-align:center;"><span style="display:inline-block; padding:4px 10px; background:${color}; color:white; border-radius:12px; font-size:12px; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.2);">🚶 실시간: ${trail.congestion_lvl}</span></div>`;
                     }
-                    // Polyline이 없을 때 시작점과 끝점만을 잇는 직선 (Fallback)
-                    else if(trail.end_lat && trail.end_lng) {
-                        var endPoint = [trail.end_lat, trail.end_lng];
-                        var lineData = [startPoint, endPoint];
-                        L.polyline(lineData, { color: '#dc3545', weight: 5, opacity: 0.7, dashArray: '5, 10' })
-                            .addTo(markersGroup)
-                            .bindPopup(trail.trail_name + " (공간 데이터 없음 / 점선 폴백)");
-                        pathBounds.push(endPoint);
+                    
+                    // a) 타입이 'park'인 경우
+                    if (trail.type === 'park') {
+                        var popupHtml = `<div style="text-align:center; font-size:13px; line-height:1.5;">
+                            <b style="color: green; font-size:15px;">🌲 [공원] ${trail.trail_name}</b><br>
+                            나와의 거리: 약 ${trail.distance_from_user} km<br>
+                            (도심 공원 거점)
+                            ${congestionBadge}
+                        </div>`;
+                        
+                        L.marker(startPoint, {icon: parkIcon}).addTo(markersGroup).bindPopup(popupHtml);
+                        pathBounds.push(startPoint);
+                    } 
+                    // b) 타입이 'trail' (코스 산책로)인 경우
+                    else {
+                        var popupHtml = `<div style="text-align:center; font-size:13px; line-height:1.5;">
+                            <b style="font-size:15px; color:#0056b3;">[산책로 ${index + 1}] ${trail.trail_name}</b><br>
+                            나와의 거리: 약 ${trail.distance_from_user} km<br>
+                            소요 시간: 약 ${trail.time_minute}분 (${trail.length_km} km)
+                            ${congestionBadge}
+                        </div>`;
+
+                        var marker = L.marker(startPoint).addTo(markersGroup).bindPopup(popupHtml);
+                        pathBounds.push(startPoint);
+
+                        // SHP/GPX 데이터에서 온 Polyline (실제 궤적)이 존재할 경우
+                        if(trail.polyline && trail.polyline.length > 0) {
+                            L.polyline(trail.polyline, { color: '#007bff', weight: 6, opacity: 0.8 })
+                                .addTo(markersGroup)
+                                .bindPopup(trail.trail_name + " 코스선 (공간좌표 적용)");
+                            
+                            // 바운더리를 폴리라인 기준으로 넓힘
+                            trail.polyline.forEach(p => pathBounds.push(p));
+                        }
+                        // Polyline이 없을 때 시작점과 끝점만을 잇는 직선 (Fallback)
+                        else if(trail.end_lat && trail.end_lng) {
+                            var endPoint = [trail.end_lat, trail.end_lng];
+                            var lineData = [startPoint, endPoint];
+                            L.polyline(lineData, { color: '#dc3545', weight: 5, opacity: 0.7, dashArray: '5, 10' })
+                                .addTo(markersGroup)
+                                .bindPopup(trail.trail_name + " (공간 데이터 없음 / 점선 폴백)");
+                            pathBounds.push(endPoint);
+                        }
                     }
                 });
 
