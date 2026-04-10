@@ -7,12 +7,12 @@ class TrailRecommendationRequest(BaseModel):
     user_lng: float = Field(..., description="사용자 현재 경도 (X)", example=127.150)
     max_distance_km: float = Field(20.0, description="최대 탐색 반경(km)")
     limit: int = Field(5, gt=0, le=50, description="반환할 추천 산책로의 최대 개수")
-    view_type: str = Field("all", description="보여줄 타입 ('all', 'park', 'trail')")
+    view_type: str = Field("all", description="보여줄 타입 ('all', 'park', 'trail', 'playground', 'facility')")
     use_realtime_api: bool = Field(False, description="실시간 도시 데이터 API 호출 여부")
 
 # 산책로 정보(Response) 세부 모델
 class TrailInfo(BaseModel):
-    type: str = Field("trail", description="데이터 종류 ('trail' 또는 'park')")
+    type: str = Field("trail", description="데이터 종류 ('trail', 'park', 'playground', 'cafe', 'hospital')")
     trail_id: str
     trail_name: str
     is_pet_allowed: int
@@ -29,6 +29,19 @@ class TrailInfo(BaseModel):
     slope_lvl: Optional[str] = Field(None, description="경사 등급 (평탄, 경사)")
     slope_val: Optional[str] = Field(None, description="경사 수치 (0-7%, 7-15% 등)")
     slope_avg: Optional[float] = Field(None, description="평균 경사도 수치 (%)")
+    
+    # 반려견 놀이터 전용 추가 정보 (Optional)
+    pg_holidays: Optional[str] = Field(None, description="휴무일")
+    pg_agency: Optional[str] = Field(None, description="운영기관")
+    pg_phone: Optional[str] = Field(None, description="전화번호")
+    pg_size: Optional[str] = Field(None, description="규모(㎡)")
+    pg_night_light: Optional[str] = Field(None, description="야간조명")
+    pg_location: Optional[str] = Field(None, description="위치(주소)")
+    pg_fee: Optional[str] = Field(None, description="이용요금")
+    pg_hours: Optional[str] = Field(None, description="운영시간")
+    pg_notes: Optional[str] = Field(None, description="특이사항")
+    pg_floor: Optional[str] = Field(None, description="바닥재")
+    pg_large_dog: Optional[str] = Field(None, description="대형견 출입가능 여부")
 
 # 추천 결과(Response) 통합 모델
 class TrailRecommendationResponse(BaseModel):

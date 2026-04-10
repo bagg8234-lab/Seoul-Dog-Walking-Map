@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.models.trail import TrailRecommendationRequest, TrailRecommendationResponse, HazardResponse
+from app.models.weather import WeatherRequest, WeatherResponse
 from app.services.trail_recommend import get_recommended_trails
 
 router = APIRouter()
@@ -27,6 +28,50 @@ def recommend_trails(request: TrailRecommendationRequest):
         weather_msg=weather_info.get("msg") if weather_info else None,
         count=len(trails)
     )
+
+@router.post("/weather", response_model=WeatherResponse, summary="특정 지역(핫스팟)의 실시간 날씨만 분리 조회")
+def get_weather(request: WeatherRequest):
+    """
+    클라이언트에서 요청한 특정 지역(area_name)의 
+    날씨 정보만 따로 추출하여 반환하는 독립된 엔드포인트입니다.
+    """
+    from app.services.weather_congestion import fetch_city_data
+    
+    weather_info = {}
+    city_data = fetch_city_data(request.area_name)
+    if city_data:
+        weather_list = city_data.get('WEATHER_STTS', [])
+        if weather_list:
+            weather = weather_list[0]
+            weather_info = {
+                'temp': weather.get('TEMP'),
+                'sensible_temp': weather.get('SENSIBLE_TEMP'),
+                'max_temp': weather.get('MAX_TEMP'),
+                'min_temp': weather.get('MIN_TEMP'),
+                'humidity': weather.get('HUMIDITY'),
+                'wind_dirct': weather.get('WIND_DIRCT'),
+                'wind_spd': weather.get('WIND_SPD'),
+                'precipitation': weather.get('PRECIPITATION'),
+                'precpt_type': weather.get('PRECPT_TYPE'),
+                'pcp_msg': weather.get('PCP_MSG'),
+                'sunrise': weather.get('SUNRISE'),
+                'sunset': weather.get('SUNSET'),
+                'uv_index_lvl': weather.get('UV_INDEX_LVL'),
+                'uv_index': weather.get('UV_INDEX'),
+                'uv_msg': weather.get('UV_MSG'),
+                'pm25_index': weather.get('PM25_INDEX'),
+                'pm25': str(weather.get('PM25')) if weather.get('PM25') is not None else None,
+                'pm10_index': weather.get('PM10_INDEX'),
+                'pm10': str(weather.get('PM10')) if weather.get('PM10') is not None else None,
+                'air_idx': weather.get('AIR_IDX'),
+                'air_idx_mvl': str(weather.get('AIR_IDX_MVL')) if weather.get('AIR_IDX_MVL') is not None else None,
+                'air_idx_main': weather.get('AIR_IDX_MAIN'),
+                'air_msg': weather.get('AIR_MSG'),
+                'weather_time': weather.get('WEATHER_TIME'),
+                'msg': weather.get('WEATHER_MSG')
+            }
+            
+    return WeatherResponse(**weather_info)
 
 @router.get("/hazards", response_model=HazardResponse)
 def get_hazards():

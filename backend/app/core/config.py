@@ -23,6 +23,11 @@ class Settings:
     GPX_DATA_DIR = os.path.join(DATA_DIR, "PTP019401", "서울둘레길 코스별 GPX 파일")
     PARK_CSV_PATH = os.path.join(DATA_DIR, "서울시 주요 공원현황.csv")
     
+    PLAYGROUND_DIR = os.path.abspath(os.path.join(BACKEND_DIR, "../data/playgroundData"))
+    PLAYGROUND_CSV_PATH = os.path.join(PLAYGROUND_DIR, "seoul_dog_playgrounds_final.csv")
+    HOSPITAL_CSV_PATH = os.path.join(PLAYGROUND_DIR, "seoul_animal_hospital_pharmacy_final.csv")
+    CAFE_CSV_PATH = os.path.join(PLAYGROUND_DIR, "seoul_pet_cafe.csv")
+    
     # 서울 실시간 도시 데이터 API KEY (TOPIS 공용)
     SEOUL_CITY_API_KEY = os.getenv("SEOUL_CITY_API_KEY")
     

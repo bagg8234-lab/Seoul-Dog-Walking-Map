@@ -178,6 +178,86 @@ def get_recommended_trails(user_lat: float, user_lng: float, max_distance_km: fl
         except Exception as e:
             print(f"Error: 공원 데이터를 불러올 수 없습니다. ({e})")
 
+    # 3-3. 반려견 시설 (놀이터, 병원, 카페) 탐색 및 리스트업
+    if view_type in ["all", "playground", "facility"]:
+        try:
+            pg_df = pd.read_csv(settings.PLAYGROUND_CSV_PATH, encoding="utf-8")
+            for idx, row in pg_df.iterrows():
+                lat = float(row.get('위도', 0))
+                lng = float(row.get('경도', 0))
+                if pd.isna(lat) or pd.isna(lng) or lat == 0 or lng == 0: continue
+                dist = haversine(user_lat, user_lng, lat, lng)
+                
+                if dist <= max_distance_km:
+                    trail = TrailInfo(
+                        type="playground", trail_id=f"PG_{idx}", trail_name=str(row.get('공원명', '알수없음')),
+                        is_pet_allowed=1, length_km=0.0, time_minute=0, start_lat=lat, start_lng=lng, end_lat=0.0, end_lng=0.0, distance_from_user=round(dist, 2), polyline=None,
+                        pg_holidays=str(row.get('휴무일', '')) if pd.notna(row.get('휴무일')) else None,
+                        pg_agency=str(row.get('운영기관', '')) if pd.notna(row.get('운영기관')) else None,
+                        pg_phone=str(row.get('전화번호', '')) if pd.notna(row.get('전화번호')) else None,
+                        pg_size=str(row.get('규모(㎡)', '')) if pd.notna(row.get('규모(㎡)')) else None,
+                        pg_night_light=str(row.get('야간조명', '')) if pd.notna(row.get('야간조명')) else None,
+                        pg_location=str(row.get('위치', '')) if pd.notna(row.get('위치')) else None,
+                        pg_fee=str(row.get('이용요금', '')) if pd.notna(row.get('이용요금')) else None,
+                        pg_hours=str(row.get('운영시간', '')) if pd.notna(row.get('운영시간')) else None,
+                        pg_notes=str(row.get('특이사항', '')) if pd.notna(row.get('특이사항')) else None,
+                        pg_floor=str(row.get('바닥재', '')) if pd.notna(row.get('바닥재')) else None,
+                        pg_large_dog=str(row.get('대형견_출입가능', '')) if pd.notna(row.get('대형견_출입가능')) else None,
+                    )
+                    recommendations.append(trail)
+        except Exception as e:
+            print(f"Error: 놀이터 데이터를 불러올 수 없습니다. ({e})")
+
+    if view_type in ["all", "facility"]:
+        # 동물병원
+        try:
+            hp_df = pd.read_csv(settings.HOSPITAL_CSV_PATH, encoding="utf-8")
+            for idx, row in hp_df.iterrows():
+                lat = float(row.get('위도', 0))
+                lng = float(row.get('경도', 0))
+                if pd.isna(lat) or pd.isna(lng) or lat == 0 or lng == 0: continue
+                dist = haversine(user_lat, user_lng, lat, lng)
+                
+                if dist <= max_distance_km:
+                    trail = TrailInfo(
+                        type="hospital", trail_id=f"HP_{idx}", trail_name=str(row.get('상호명', '알수없음')),
+                        is_pet_allowed=1, length_km=0.0, time_minute=0, start_lat=lat, start_lng=lng, end_lat=0.0, end_lng=0.0, distance_from_user=round(dist, 2), polyline=None,
+                        pg_location=str(row.get('도로명주소', '')) if pd.notna(row.get('도로명주소')) else str(row.get('지번주소', '')),
+                        pg_phone=str(row.get('전화번호', '')) if pd.notna(row.get('전화번호')) else None,
+                        pg_notes=str(row.get('영업상태명', '')) if pd.notna(row.get('영업상태명')) else None
+                    )
+                    recommendations.append(trail)
+        except Exception as e:
+            print(f"Error: 동물병원 데이터를 불러올 수 없습니다. ({e})")
+
+        # 애견동반 카페
+        try:
+            cf_df = pd.read_csv(settings.CAFE_CSV_PATH, encoding="utf-8")
+            for idx, row in cf_df.iterrows():
+                lat = float(row.get('위도', 0))
+                lng = float(row.get('경도', 0))
+                if pd.isna(lat) or pd.isna(lng) or lat == 0 or lng == 0: continue
+                dist = haversine(user_lat, user_lng, lat, lng)
+                
+                if dist <= max_distance_km:
+                    notes_arr = []
+                    if pd.notna(row.get('반려견 제한사항')): notes_arr.append(f"제한: {row.get('반려견 제한사항')}")
+                    if pd.notna(row.get('주차(가능) 여부')): notes_arr.append(f"주차: {row.get('주차(가능) 여부')}")
+                    
+                    trail = TrailInfo(
+                        type="cafe", trail_id=f"CF_{idx}", trail_name=str(row.get('시설명', '알수없음')),
+                        is_pet_allowed=1, length_km=0.0, time_minute=0, start_lat=lat, start_lng=lng, end_lat=0.0, end_lng=0.0, distance_from_user=round(dist, 2), polyline=None,
+                        pg_location=str(row.get('도로명주소', '')) if pd.notna(row.get('도로명주소')) else None,
+                        pg_phone=str(row.get('전화번호', '')) if pd.notna(row.get('전화번호')) else None,
+                        pg_hours=str(row.get('운영시간', '')) if pd.notna(row.get('운영시간')) else None,
+                        pg_holidays=str(row.get('휴무일', '')) if pd.notna(row.get('휴무일')) else None,
+                        pg_large_dog=str(row.get('동반 가능 크기', '')) if pd.notna(row.get('동반 가능 크기')) else None,
+                        pg_notes=" / ".join(notes_arr) if notes_arr else None
+                    )
+                    recommendations.append(trail)
+        except Exception as e:
+            print(f"Error: 애견카페 데이터를 불러올 수 없습니다. ({e})")
+
     # 4. 사용자와 가까운 순서대로 정렬 및 슬라이싱
     recommendations.sort(key=lambda x: x.distance_from_user)
     final_limit_items = recommendations[:limit]
