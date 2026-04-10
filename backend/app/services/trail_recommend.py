@@ -220,11 +220,11 @@ def get_recommended_trails(user_lat: float, user_lng: float, max_distance_km: fl
                 
                 if dist <= max_distance_km:
                     trail = TrailInfo(
-                        type="hospital", trail_id=f"HP_{idx}", trail_name=str(row.get('상호명', '알수없음')),
+                        type="hospital", trail_id=f"HP_{idx}", trail_name=str(row.get('업소명', '알수없음')),
                         is_pet_allowed=1, length_km=0.0, time_minute=0, start_lat=lat, start_lng=lng, end_lat=0.0, end_lng=0.0, distance_from_user=round(dist, 2), polyline=None,
                         pg_location=str(row.get('도로명주소', '')) if pd.notna(row.get('도로명주소')) else str(row.get('지번주소', '')),
                         pg_phone=str(row.get('전화번호', '')) if pd.notna(row.get('전화번호')) else None,
-                        pg_notes=str(row.get('영업상태명', '')) if pd.notna(row.get('영업상태명')) else None
+                        pg_notes=str(row.get('영업상태', '')) if pd.notna(row.get('영업상태')) else None
                     )
                     recommendations.append(trail)
         except Exception as e:
