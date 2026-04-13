@@ -50,7 +50,7 @@ def inject_slope_info(items: List[TrailInfo]):
                     break
         
         if slope_data:
-            # slope_data 예: {"lvl": "평탄", "val": "7-15%", "avg": 9.5}
+            # slope_data 예: {"lvl": "평지", "val": "0-2%", "avg": 1.0}
             item.slope_lvl = slope_data.get("lvl")
             item.slope_val = slope_data.get("val")
             item.slope_avg = slope_data.get("avg")

@@ -8,6 +8,7 @@ from app.models.trail import TrailInfo
 from app.core.config import settings
 from app.services.weather_congestion import fetch_city_data
 from app.services.slope_service import inject_slope_info
+from app.services.soil_service import inject_soil_info
 
 # 앱 전역 설정에서 데이터 경로 가져오기
 ABS_DATA_PATH = settings.PET_TRAIL_CSV
@@ -301,6 +302,9 @@ def get_recommended_trails(user_lat: float, user_lng: float, max_distance_km: fl
     
     # 6. 경사도 정보 주입 (모듈화된 함수 호출 - 성능 이슈 시 이 라인만 제거 가능)
     inject_slope_info(final_limit_items)
+    
+    # 7. 바닥 재질 정보 주입
+    inject_soil_info(final_limit_items)
     
     return final_limit_items, weather_info
 

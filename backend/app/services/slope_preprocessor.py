@@ -12,18 +12,26 @@ from app.core.config import settings
 
 # ── 경사도 분류 헬퍼 ──────────────────────────────────────────────────
 SLOPE_MIDPOINTS = {
+    "0-2%": 1.0, "0~2%": 1.0,
+    "2-7%": 4.5, "2~7%": 4.5,
     "0-7%": 3.5, "0~7%": 3.5,
     "7-15%": 11.0, "7~15%": 11.0,
     "15-30%": 22.5, "15~30%": 22.5,
     "30-60%": 45.0, "30~60%": 45.0,
     "60%이상": 70.0, "60% 이상": 70.0,
+    "60-100%": 80.0, "60~100%": 80.0
 }
 
 def categorize_slope(avg_pct: float) -> str:
-    """평균 경사 수치(%)로 등급 분류 (15% 기준)"""
+    """평균 경사 수치(%)로 등급 분류 (3% 미만 평지, 8% 미만 완만, 이상 경사)"""
     if avg_pct is None:
         return "정보 없음"
-    return "평탄" if avg_pct < 15.0 else "경사"
+    if avg_pct < 3.0:
+        return "평지"
+    elif avg_pct < 8.0:
+        return "완만"
+    else:
+        return "경사"
 
 def val_to_num(slope_val: str) -> float | None:
     for k, v in SLOPE_MIDPOINTS.items():
@@ -61,7 +69,7 @@ def run_real_preprocessing():
         return
 
     WGS84 = "EPSG:4326"
-    VWORLD_CRS = 5185  # 실제 측정으로 확인된 EPSG
+    VWORLD_CRS = 5181  # 실제 PRJ 확인 결과: KGD2002 Central Belt (EPSG:5181)
 
     # ── 1. Vworld 경사도 로드 & WGS84 변환 ────────────────────────────
     print("1. Vworld 경사도 SHP 로드 및 좌표계 변환...")
@@ -197,7 +205,7 @@ def run_real_preprocessing():
             final_cache[pname] = {"lvl": "정보 없음", "val": "위치 외 지역", "avg": None}
 
     # ── 9. 저장 ──────────────────────────────────────────────────────
-    output_path = os.path.join(settings.DATA_DIR, "slope_cache.json")
+    output_path = os.path.join(settings.DATA_DIR, "slope_cachev2.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(final_cache, f, ensure_ascii=False, indent=2)
 
