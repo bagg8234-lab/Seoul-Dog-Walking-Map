@@ -1,8 +1,14 @@
 """
-loop_router.py (Reset Version)
-==============================
-로컬 그래프 데이터만을 사용하여 경로를 생성하는 안정적인 초기 버전입니다.
-외부 API(OSRM)나 복잡한 계단 검출 기능을 제거하고, "선이 완벽하게 그려지는 것"에 집중합니다.
+loop_router.py
+==============
+시작점에서 출발하여 다시 돌아오는 순환(Loop) 산책 경로를 생성합니다.
+
+핵심 개선:
+  - 시작점이 속한 연결 컴포넌트 내에서만 경유지를 선정 (컴포넌트 간 경로 실패 방지)
+  - 경유지(waypoint)를 목표 반경 내에서 각도 균등 분포로 선정하여 자연스러운 루프 형태 유지
+  - max_waypoints 제한으로 과도하게 복잡한 경로 방지
+  - shape_regularity 파라미터로 루프의 원형 정도를 조절
+  - config(YAML)에서 모든 파라미터를 읽어옴
 """
 
 import networkx as nx
@@ -20,118 +26,313 @@ def _haversine_m(lon1, lat1, lon2, lat2):
 
 
 def _get_reachable_nodes(G, start_node):
-    """시작 노드와 연결된 주 컴포넌트 노드 반환."""
+    """시작 노드에서 도달 가능한 (같은 컴포넌트) 노드 집합을 반환."""
     for comp in nx.connected_components(G):
-        if start_node in comp: return comp
+        if start_node in comp:
+            return comp
     return {start_node}
 
 
-def _assemble_polyline(G, node_path):
+def _route_signature(path_nodes):
+    """경로의 정확한 중복 판단용 시그니처를 반환."""
+    return tuple(path_nodes)
+
+
+def _edge_pair(u, v):
+    """방향과 관계없이 같은 엣지를 같은 키로 취급한다."""
+    return tuple(sorted((u, v)))
+
+
+def _prepare_waypoint_candidates(G, start_node, reachable_nodes):
+    """시작점 기준 waypoint 후보의 거리와 각도를 한 번만 계산한다."""
+    sx, sy = G.nodes[start_node]['x'], G.nodes[start_node]['y']
+    candidates = []
+
+    for n in reachable_nodes:
+        if n == start_node:
+            continue
+        nx_val, ny_val = G.nodes[n]['x'], G.nodes[n]['y']
+        dist = _haversine_m(sx, sy, nx_val, ny_val)
+        angle = math.atan2(ny_val - sy, nx_val - sx)
+        candidates.append((n, dist, angle))
+
+    return candidates
+
+
+def _route_core_edges(path_nodes, start_node):
+    """출발점에 붙는 짧은 공통 구간을 제외한 핵심 엣지 집합을 만든다."""
+    core_edges = set()
+    for u, v in zip(path_nodes, path_nodes[1:]):
+        if u == start_node or v == start_node:
+            continue
+        core_edges.add(tuple(sorted((u, v))))
+    return core_edges
+
+
+def _route_overlap_ratio(existing_path, candidate_path, start_node):
+    """두 루프 경로의 핵심 구간 겹침 비율을 계산한다."""
+    existing_edges = _route_core_edges(existing_path, start_node)
+    candidate_edges = _route_core_edges(candidate_path, start_node)
+
+    if not existing_edges or not candidate_edges:
+        return 0.0
+
+    overlap = len(existing_edges & candidate_edges)
+    denom = min(len(existing_edges), len(candidate_edges))
+    return overlap / max(denom, 1)
+
+
+def _select_waypoints(G, start_node, target_radius_m, num_waypoints,
+                      shape_regularity=0.7, reachable_nodes=None, candidate_pool=None):
     """
-    노드 경로를 받아 각 엣지의 'geometry' 좌표를 순서대로 병합합니다.
-    (도로의 굴곡을 그대로 따라가게 함)
+    시작점 주변에서 경유지를 선정합니다.
+    reachable_nodes가 제공되면 해당 집합 내에서만 후보를 선택합니다.
     """
-    full_coords = []
-    for i in range(len(node_path) - 1):
-        u, v = node_path[i], node_path[i+1]
-        edge_data = G.get_edge_data(u, v)
-        if not edge_data: continue
-        
-        # 첫 번째 엣지 데이터 사용
-        key = list(edge_data.keys())[0]
-        geom = edge_data[key].get('geometry', [])
-        
-        if not geom:
-            # geometry가 없으면 직선 (lat, lon)
-            step = [[u[1], u[0]], [v[1], v[0]]]
+    sx, sy = G.nodes[start_node]['x'], G.nodes[start_node]['y']
+
+    # 같은 컴포넌트 내의 노드만 사용
+    if candidate_pool is not None:
+        pool = list(candidate_pool)
+        precomputed = True
+    elif reachable_nodes is not None:
+        pool = [n for n in reachable_nodes if n != start_node]
+        precomputed = False
+    else:
+        pool = [n for n in G.nodes() if n != start_node]
+        precomputed = False
+
+    if num_waypoints <= 0 or not pool:
+        return []
+
+    if shape_regularity < 0.3:
+        # 낮은 정규성: 반경 내 무작위 선정
+        candidates = []
+        if precomputed:
+            for n, dist, _angle in pool:
+                if dist <= target_radius_m * 1.5:
+                    candidates.append(n)
         else:
-            # GeoJSON (lon, lat) -> Leaflet (lat, lon) 변환
-            step = [[p[1], p[0]] for p in geom]
-            
-            # 방향 정렬 (v와 가까운 쪽이 끝점이 되도록)
-            d_start = (step[0][0]-u[1])**2 + (step[0][1]-u[0])**2
-            d_end = (step[-1][0]-u[1])**2 + (step[-1][1]-u[0])**2
-            if d_start > d_end:
-                step.reverse()
-        
-        if not full_coords:
-            full_coords.extend(step)
+            for n in pool:
+                nx_val, ny_val = G.nodes[n]['x'], G.nodes[n]['y']
+                dist = _haversine_m(sx, sy, nx_val, ny_val)
+                if dist <= target_radius_m * 1.5:
+                    candidates.append(n)
+
+        if len(candidates) < num_waypoints:
+            return candidates if candidates else []
+
+        selected = random.sample(candidates, num_waypoints)
+        selected.sort(key=lambda n: math.atan2(
+            G.nodes[n]['y'] - sy, G.nodes[n]['x'] - sx
+        ))
+        return selected
+
+    # 높은 정규성: 목표 각도에 가장 가까운 노드를 선정
+    start_angle = random.uniform(0, 2 * math.pi)
+    target_angles = [
+        start_angle + (2 * math.pi * i / num_waypoints)
+        for i in range(num_waypoints)
+    ]
+
+    # 반경 범위 내 후보 노드 & 각도/거리 사전 계산
+    candidates = []
+    if precomputed:
+        # 반경의 10%~200% 범위 내 후보 (소규모 컴포넌트 대응 위해 범위 확대)
+        for n, dist, angle in pool:
+            if target_radius_m * 0.1 <= dist <= target_radius_m * 2.0:
+                candidates.append((n, dist, angle))
+    else:
+        for n in pool:
+            nx_val, ny_val = G.nodes[n]['x'], G.nodes[n]['y']
+            dist = _haversine_m(sx, sy, nx_val, ny_val)
+            # 반경의 10%~200% 범위 내 후보 (소규모 컴포넌트 대응 위해 범위 확대)
+            if target_radius_m * 0.1 <= dist <= target_radius_m * 2.0:
+                angle = math.atan2(ny_val - sy, nx_val - sx)
+                candidates.append((n, dist, angle))
+
+    # 후보가 부족하면 거리 제한 없이 전체 pool에서 선정
+    if len(candidates) < num_waypoints:
+        if precomputed:
+            candidates = list(pool)
         else:
-            full_coords.extend(step[1:]) # 중복점 제거
-            
-    return full_coords
+            candidates = []
+            for n in pool:
+                nx_val, ny_val = G.nodes[n]['x'], G.nodes[n]['y']
+                dist = _haversine_m(sx, sy, nx_val, ny_val)
+                angle = math.atan2(ny_val - sy, nx_val - sx)
+                candidates.append((n, dist, angle))
+
+    if not candidates:
+        return []
+
+    # 각 목표 각도에 대해 가장 가까운 후보 선정
+    selected = []
+    used = set()
+    ideal_dist = target_radius_m * 0.6
+
+    for target_angle in target_angles:
+        best_node = None
+        best_score = float('inf')
+
+        for n, dist, angle in candidates:
+            if n in used:
+                continue
+
+            angle_diff = abs(math.atan2(
+                math.sin(angle - target_angle),
+                math.cos(angle - target_angle)
+            ))
+
+            dist_diff = abs(dist - ideal_dist) / max(target_radius_m, 1)
+
+            score = angle_diff * shape_regularity + dist_diff * (1 - shape_regularity)
+
+            if score < best_score:
+                best_score = score
+                best_node = n
+
+        if best_node:
+            selected.append(best_node)
+            used.add(best_node)
+
+    return selected
 
 
 def generate_loop_routes(G, start_node, target_minutes=30, num_routes=3, config=None):
     """
-    시작점에서 일정 거리 떨어진 지점을 찍고 돌아오는 가장 단순한 로컬 루프 생성.
+    시작 노드에서 출발하여 목표 산책 시간에 맞는 루프형 산책 코스를 생성합니다.
     """
-    if config is None: config = {}
-    walking_speed = config.get('loop', {}).get('walking_speed_mps', 1.0)
-    revisit_penalty = 1000 # 돌아오는 길 중첩 방지
+    if config is None:
+        config = {}
 
-    # 목표 반경 (편도 약 15~20분 거리)
-    target_radius = (target_minutes * 60 * walking_speed) / 2.2
-    
+    loop_cfg = config.get('loop', {})
+    max_wp = loop_cfg.get('max_waypoints', 4)
+    min_wp = loop_cfg.get('min_waypoints', 2)
+    shape_reg = loop_cfg.get('shape_regularity', 0.7)
+    revisit_penalty = loop_cfg.get('revisit_penalty', 999999)
+    num_candidates = min(loop_cfg.get('num_candidates', 80), loop_cfg.get('max_candidate_attempts', 80))
+    walking_speed = loop_cfg.get('walking_speed_mps', 1.0)
+
+    # 시작점이 속한 컴포넌트만 사용 (다른 컴포넌트 노드로의 경로 실패 방지)
     reachable = _get_reachable_nodes(G, start_node)
-    sx, sy = G.nodes[start_node]['x'], G.nodes[start_node]['y']
-    
-    routes = []
-    attempts = 0
-    while len(routes) < num_routes and attempts < 100:
-        attempts += 1
-        
-        # 랜덤 타겟 선정
-        angle = random.uniform(0, 2 * math.pi)
-        dist = target_radius * random.uniform(0.8, 1.2)
-        tx = sx + (dist / 111000.0) * math.cos(angle) / math.cos(math.radians(sy))
-        ty = sy + (dist / 111000.0) * math.sin(angle)
-        
-        # 가장 가까운 노드 찾기 (전체 탐색 대신 랜덤 샘플링)
-        candidates = random.sample(list(reachable), min(500, len(reachable)))
-        node_b = min(candidates, key=lambda n: (G.nodes[n]['x']-tx)**2 + (G.nodes[n]['y']-ty)**2)
-        
-        if node_b == start_node: continue
 
-        # 로컬 그래프에서 경로 탐색
-        subG = G.copy() # 가중치 수정을 위해 복사
-        try:
-            # 가는 길 (A -> B)
-            path_ab = nx.shortest_path(subG, source=start_node, target=node_b, weight='weight')
-            
-            # 돌아오는 길을 위한 페널티 부여
-            for i in range(len(path_ab)-1):
-                u, v = path_ab[i], path_ab[i+1]
-                for k in subG[u][v]:
-                    subG[u][v][k]['weight'] = subG[u][v][k].get('weight', 10) + revisit_penalty
-            
-            # 오는 길 (B -> A)
-            path_ba = nx.shortest_path(subG, source=node_b, target=start_node, weight='weight')
-            
-            full_path = path_ab + path_ba[1:]
-            
-            # 거리 계산
-            total_dist = 0.0
-            for i in range(len(full_path)-1):
-                u, v = full_path[i], full_path[i+1]
-                total_dist += G[u][v][0].get('length', 10.0)
-            
-            est_minutes = round(total_dist / walking_speed / 60, 1)
-            
-            # 도로 추종 폴리라인 생성
-            road_polyline = _assemble_polyline(G, full_path)
-            
-            routes.append({
-                "path_nodes": full_path,
-                "polyline": road_polyline,
-                "estimated_minutes": est_minutes,
-                "total_distance_m": round(total_dist, 1),
-                "waypoint_count": 1,
-                "stair_points": [] 
-            })
-            
-        except nx.NetworkXNoPath:
+    print(f"🚶 [{start_node[0]:.5f}, {start_node[1]:.5f}]에서 {target_minutes}분 루프 코스 탐색...")
+    print(f"   설정: waypoints={min_wp}~{max_wp}, regularity={shape_reg}, speed={walking_speed} m/s")
+    print(f"   시작점 컴포넌트: {len(reachable)}개 노드")
+
+    # 목표 거리 계산
+    target_distance = target_minutes * 60 * walking_speed
+    # 목표 시간에서 너무 크게 벗어나지 않도록 허용 오차를 좁게 둔다.
+    time_tolerance_minutes = loop_cfg.get('time_tolerance_minutes', max(3, round(target_minutes * 0.1)))
+    min_dist = max(1, target_minutes - time_tolerance_minutes) * 60 * walking_speed
+    max_dist = (target_minutes + time_tolerance_minutes) * 60 * walking_speed
+
+    # 경유지 배치 반경
+    target_radius = target_distance / (2 * math.pi) * 1.5
+    waypoint_candidates = _prepare_waypoint_candidates(G, start_node, reachable)
+
+    # 컴포넌트가 너무 작으면 최소 경유지를 1로 줄임
+    effective_min_wp = min(min_wp, max(1, len(reachable) // 20))
+    effective_max_wp = min(max_wp, max(1, len(reachable) // 10))
+
+    routes = []
+    seen_signatures = set()
+    overlap_threshold = loop_cfg.get('overlap_threshold', 0.55)
+
+    for attempt in range(num_candidates):
+        if len(routes) >= num_routes:
+            break
+
+        num_wp = random.randint(effective_min_wp, max(effective_min_wp, effective_max_wp))
+
+        waypoints = _select_waypoints(
+            G, start_node, target_radius, num_wp, shape_reg,
+            reachable_nodes=reachable,
+            candidate_pool=waypoint_candidates
+        )
+
+        if num_wp > 0 and len(waypoints) == 0:
             continue
 
-    print(f"Reset Loop generation: {len(routes)} routes found.")
+        loop_path = []
+        total_real_dist = 0.0
+        valid_loop = True
+        current = start_node
+        penalized_edges = set()
+
+        def _route_weight(u, v, edge_data):
+            edge_key = _edge_pair(u, v)
+            best_weight = float('inf')
+
+            for data in edge_data.values():
+                base_weight = data.get('weight', data.get('length', 10.0))
+                if edge_key in penalized_edges:
+                    base_weight += revisit_penalty
+                if base_weight < best_weight:
+                    best_weight = base_weight
+
+            return best_weight
+
+        # 시작 → 경유지들 → 시작 (복귀)
+        for wp in waypoints + [start_node]:
+            try:
+                segment = nx.shortest_path(G, source=current, target=wp, weight=_route_weight)
+
+                for i in range(len(segment) - 1):
+                    u, v = segment[i], segment[i + 1]
+                    edge_data = G.get_edge_data(u, v)
+                    if edge_data:
+                        key = list(edge_data.keys())[0]
+                        total_real_dist += edge_data[key].get('length', 10.0)
+
+                    penalized_edges.add(_edge_pair(u, v))
+
+                if loop_path:
+                    loop_path.extend(segment[1:])
+                else:
+                    loop_path.extend(segment)
+
+                current = wp
+
+                if total_real_dist > max_dist * 1.15:
+                    valid_loop = False
+                    break
+
+            except nx.NetworkXNoPath:
+                valid_loop = False
+                break
+
+        if not valid_loop:
+            continue
+
+        path_signature = _route_signature(loop_path)
+        if path_signature in seen_signatures:
+            continue
+
+        too_similar = False
+        for existing_route in routes:
+            existing_path = existing_route["path_nodes"]
+            if _route_overlap_ratio(existing_path, loop_path, start_node) >= overlap_threshold:
+                too_similar = True
+                break
+
+        if too_similar:
+            continue
+
+        # 거리 조건 필터링 (소규모 컴포넌트에서는 조건 완화)
+        dist_low = min_dist * 0.9 if len(reachable) < 500 else min_dist * 0.95
+        dist_high = max_dist * 1.05 if len(reachable) < 500 else max_dist * 1.1
+
+        if dist_low <= total_real_dist <= dist_high:
+            est_minutes = round(total_real_dist / walking_speed / 60, 1)
+
+            routes.append({
+                "path_nodes": loop_path,
+                "estimated_minutes": est_minutes,
+                "total_distance_m": round(total_real_dist, 1),
+                "waypoint_count": len(waypoints),
+            })
+            seen_signatures.add(path_signature)
+
+    print(f"✅ {len(routes)}개 루프 코스 생성 완료 (시도: {min(attempt + 1, num_candidates)}회)\n")
     return routes

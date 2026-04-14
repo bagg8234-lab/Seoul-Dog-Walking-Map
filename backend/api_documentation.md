@@ -1,6 +1,6 @@
 # 반려견 산책로 연동 백엔드 API 명세서
 
-협업하는 프론트엔드/클라이언트 개발자가 참고하실 수 있도록, 새롭게 구성된 `POST` 형태의 주요 API 두 가지에 대해 정리된 문서입니다.
+협업하는 프론트엔드/클라이언트 개발자가 참고하실 수 있도록, 새롭게 구성된 `POST` 형태의 주요 API 세 가지에 대해 정리된 문서입니다.
 
 ---
 
@@ -106,3 +106,202 @@
 }
 ```
 *응답 내의 레거시 구조(예: weather_temp)는 Optional 필드로 반환되나, 가급적 **날씨 단독 조회 API**(위 1번 문서)를 통해 활용하는 것을 권장합니다.*
+
+---
+
+## 3. 사용자 맞춤형 루프 산책 경로 생성 API
+
+사용자의 위치, 반려견 프로필(크기, 나이, 민감도), 산책 조건(경사도 선호, 혼잡도 선호), 현재 날씨/혼잡도를 기반으로 **필터링된 루프 형태의 산책 경로**를 생성합니다.
+
+이 API는 **배제된 경로들도 함께 반환**하여, 프론트엔드에서 시각화하고 필터링이 제대로 작동했는지 검증할 수 있습니다.
+
+- **Endpoint**: `POST /api/loops/generate`
+- **Content-Type**: `application/json`
+
+### Request (요청 예시)
+```json
+{
+  "user_lat": 37.514,
+  "user_lng": 127.105,
+  "target_minutes": 30,
+  "num_routes": 3,
+  "dog_profile": {
+    "size": "중형",
+    "age_group": "성견",
+    "energy": "보통",
+    "is_long_back": false,
+    "is_brachycephalic": true,
+    "noise_sensitive": false,
+    "heat_sensitive": true,
+    "joint_sensitive": false
+  },
+  "walk_condition": {
+    "crowd_preference": "상관없음",
+    "slope_preference": "평지 위주",
+    "range_preference": "집 주변",
+    "time_min": 30
+  },
+  "weather_context": {
+    "temperature_c": 28.5,
+    "area_congest_lvl": "보통"
+  },
+  "use_ai_explanation": true
+}
+```
+
+**필드 설명:**
+- `target_minutes` (int): 목표 산책 시간 (5~120분)
+- `num_routes` (int): 생성할 경로 수 (1~5)
+- `dog_profile` (객체, Optional): 반려견 정보
+  - `size`: 소형/중형/대형
+  - `age_group`: 강아지/성견/노령견
+  - `energy`: 낮음/보통/높음
+  - `is_long_back`: 장허리종 여부
+  - `is_brachycephalic`: 단두종 여부
+  - `noise_sensitive`: 소음 민감 여부
+  - `heat_sensitive`: 더위 민감 여부
+  - `joint_sensitive`: 관절 민감 여부
+- `walk_condition` (객체, Optional): 산책 조건
+  - `crowd_preference`: 조용한 곳/상관없음
+  - `slope_preference`: 평지 위주/상관없음
+  - `time_min`: 산책 시간(분)
+- `weather_context` (객체, Optional): 현재 날씨/혼잡도
+  - `temperature_c`: 기온(°C)
+  - `area_congest_lvl`: 여유/보통/약간 붐빔/붐빔
+- `use_ai_explanation` (bool): Azure OpenAI를 이용한 설명 생성 여부
+
+### Response (응답 예시)
+```json
+{
+  "routes": [
+    {
+      "route_id": 1,
+      "estimated_minutes": 31.5,
+      "total_distance_m": 2580,
+      "waypoint_count": 8,
+      "polyline": [
+        [37.514, 127.105],
+        [37.515, 127.106],
+        [37.516, 127.107]
+      ],
+      "route_warnings": [],
+      "route_explanation": "이 경로는 더위에 민감한 우리 아이를 위해 그늘진 공원 지역을 최우선으로 선택했습니다."
+    }
+  ],
+  "rejected_routes": [
+    {
+      "route_id": 2,
+      "estimated_minutes": 28.0,
+      "total_distance_m": 2300,
+      "waypoint_count": 7,
+      "polyline": [
+        [37.516, 127.107],
+        [37.517, 127.108],
+        [37.518, 127.109]
+      ],
+      "reject_reasons": [
+        "단두종/더위민감 조건으로 heat_risk 임계 초과 구간 배제"
+      ]
+    },
+    {
+      "route_id": 3,
+      "estimated_minutes": 32.0,
+      "total_distance_m": 2400,
+      "waypoint_count": 9,
+      "polyline": [
+        [37.515, 127.104],
+        [37.516, 127.103],
+        [37.517, 127.102]
+      ],
+      "reject_reasons": [
+        "조건을 만족하는 경로가 부족함으로 생성된 추가 후보 경로"
+      ]
+    }
+  ],
+  "requested_lat": 37.514,
+  "requested_lng": 127.105,
+  "start_lat": 37.5142,
+  "start_lng": 127.1055,
+  "count": 1,
+  "filter_info": {
+    "summary": "단두종/더위민감 조건으로 heat_risk 지수가 높은 구간을 배제했습니다.",
+    "applied_rules": [
+      "단두종/더위민감: heat_risk >= 60 배제",
+      "고온 시 여름철 화상 주의 구간 배제"
+    ],
+    "activated_rules": "R2(고온), R3(단두종/더위민감)",
+    "no_match_found": false
+  },
+  "no_match_found": false,
+  "no_match_message": null
+}
+```
+
+**응답 필드 설명:**
+- `routes`: 필터 조건을 만족하는 추천 경로 리스트
+  - `route_id`: 경로 고유 식별자
+  - `polyline`: 경로 좌표 배열 [[위도, 경도], ...]
+  - `route_explanation`: 경로 추천 이유 (use_ai_explanation=true일 때만 생성)
+- `rejected_routes`: **필터링으로 제외된 경로들** (시각화/검증용)
+  - `route_id`: 경로 고유 식별자
+  - `reject_reasons`: 배제 사유 리스트
+  - 예: "취약견 조건으로 급경사 구간 배제", "소음 민감 조건으로 차량 비중이 높은 구간 배제"
+- `filter_info`: 적용된 필터링 규칙 정보
+  - `activated_rules`: 활성화된 규칙 (R1: 취약견, R2: 고온, R3: 단두종/더위, R4: 소음, R5: 혼잡도)
+- `no_match_found`: 조건을 만족하는 경로가 없으면 true (fallback 경로 제공)
+
+### 시각화 가이드
+
+거부된 경로들(`rejected_routes`)을 지도에 표시하여 필터링이 제대로 작동했는지 검증할 수 있습니다:
+
+- **추천 경로**: 초록색 실선으로 표시
+- **거부된 경로**: 빨간색 점선으로 표시
+- **각 팝업**: 거부 사유를 명확하게 표시
+
+상세한 가이드는 [FILTERING_VISUALIZATION_GUIDE.md](./FILTERING_VISUALIZATION_GUIDE.md)를 참고하세요.
+
+### 예외 상황
+
+#### 조건을 만족하는 경로가 없을 때
+```json
+{
+  "routes": [ /* fallback 경로 3개 */ ],
+  "rejected_routes": [ /* 모든 생성 경로 */ ],
+  "no_match_found": true,
+  "no_match_message": "조건에 맞는 경로가 없습니다 (단두종/더위민감: heat_risk >= 60 배제). 아래는 필터 미적용 기본 경로입니다.",
+  "count": 3
+}
+```
+
+#### 사용자가 모든 필터를 "상관없음"으로 선택했을 때
+```json
+{
+  "routes": [ /* 필터링 없이 상위 3개 경로 */ ],
+  "rejected_routes": [],
+  "filter_info": {
+    "activated_rules": "없음",
+    "summary": "시간/거리/루프 구조 중심의 중립 설명"
+  },
+  "count": 3
+}
+```
+
+---
+
+## 배제 규칙 참고
+
+| 규칙 | 조건 | 영향받는 필터 |
+|-----|------|--------------|
+| R1 | 경로에 급경사(20%+) 또는 계단 구간 포함 | 소형견, 관절약함, 노령견, 장허리종 |
+| R2 | 지표면 온도 높음 + 현재 기온 27°C 이상 | 고온날씨 |
+| R3 | heat_risk 지수 ≥ 60 | 단두종, 더위민감 |
+| R4 | 차량 비중 ≥ 45% | 소음민감 |
+| R5 | 지역 혼잡도 "약간 붐빔" 이상 | 혼잡도민감 + crowd_preference="조용한 곳" |
+
+---
+
+## 성능 유의사항
+
+- **첫 요청**: 그래프 초기 로딩으로 2~5초 소요
+- **이후 요청**: 캐시된 그래프 사용으로 500ms~1초 소요
+- **경로 생성**: 100개 후보 중 중복 제거 후 필터링으로 최대 2초 추가

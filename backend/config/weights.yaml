@@ -61,9 +61,14 @@ leisure_bonus:
 
 # --- 루프 경로 생성 파라미터 ---
 loop:
-  max_waypoints: 5 # 다각형 형태를 위해 약간 증가
-  min_waypoints: 4 # 사각형/보통 이상의 형태를 위해 4개로 고정
-  shape_regularity: 0.8 # 더 정갈한(원형/사각형에 가까운) 형태 유도
-  revisit_penalty: 999999
-  num_candidates: 120
-  walking_speed_mps: 1.0
+  max_waypoints: 4 # 경유지 최대 수 (클수록 복잡)
+  min_waypoints: 0 # 경유지 최소 수
+  shape_regularity: 0.7 # 0~1, 1에 가까울수록 원형에 가까운 루프
+  revisit_penalty: 999999 # 왔던 길 다시 가는 것 방지
+  num_candidates: 80 # 후보 경로 생성 시도 횟수
+  walking_speed_mps: 1.0 # 산책 속도 (m/s), 기본 시속 3.6km/h
+
+# --- 시나리오1 완화 임계치 ---
+scenario1:
+  steep_limit: 5 # 급경사 허용 개수
+  stairs_limit: 5 # 계단 허용 개수

@@ -19,8 +19,7 @@
         input[type="text"] { padding: 10px; width: 250px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); }
         button.action-btn { padding: 10px 20px; font-size: 15px; font-weight: bold; color: white; border: none; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
         .loading { font-size: 14px; color: #666; display: none; font-weight: bold; margin-left: 10px; }
-        .time-slider-wrap { display: flex; align-items: center; gap: 8px; }
-        .time-slider-wrap input[type="range"] { width: 140px; }
+        .time-choice-wrap { display: flex; align-items: center; gap: 8px; }
         .time-label { font-weight: bold; font-size: 16px; min-width: 50px; color: #28a745; }
     </style>
 </head>
@@ -49,10 +48,48 @@
     <div id="headerSmall" class="header-panel" style="display:none;">
         <label><b>출발지:</b></label>
         <input type="text" id="addrSmall" placeholder="예: 잠실동, 삼성동" value="잠실동">
-        <div class="time-slider-wrap">
+        <div style="width:100%; display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:4px; padding-top:8px; border-top:1px solid #e9ecef;">
+            <label><b>사용자 입력:</b></label>
+            <select id="dogSize" style="padding:8px; border:1px solid #ccc; border-radius:6px; font-size:14px;">
+                <option value="">견종 크기</option>
+                <option value="소형">소형</option>
+                <option value="중형" selected>중형</option>
+                <option value="대형">대형</option>
+            </select>
+            <select id="dogAgeGroup" style="padding:8px; border:1px solid #ccc; border-radius:6px; font-size:14px;">
+                <option value="">나이대</option>
+                <option value="강아지">강아지</option>
+                <option value="성견" selected>성견</option>
+                <option value="노령견">노령견</option>
+            </select>
+            <select id="dogEnergy" style="padding:8px; border:1px solid #ccc; border-radius:6px; font-size:14px;">
+                <option value="">체력</option>
+                <option value="낮음">낮음</option>
+                <option value="보통" selected>보통</option>
+                <option value="높음">높음</option>
+            </select>
+            <select id="crowdPreference" style="padding:8px; border:1px solid #ccc; border-radius:6px; font-size:14px;">
+                <option value="상관없음" selected>혼잡도 상관없음</option>
+                <option value="조용한 곳">조용한 곳 선호</option>
+            </select>
+            <select id="slopePreference" style="padding:8px; border:1px solid #ccc; border-radius:6px; font-size:14px;">
+                <option value="상관없음" selected>경사 상관없음</option>
+                <option value="평지 위주">평지 위주</option>
+            </select>
+            <label style="font-size:13px;"><input type="checkbox" id="noiseSensitive"> 소음 민감</label>
+            <label style="font-size:13px;"><input type="checkbox" id="heatSensitive"> 더위 민감</label>
+            <label style="font-size:13px;"><input type="checkbox" id="jointSensitive"> 관절 민감</label>
+            <label style="font-size:13px;"><input type="checkbox" id="brachycephalic"> 단두종</label>
+            <label style="font-size:13px;"><input type="checkbox" id="longBack"> 장허리종</label>
+        </div>
+        <div class="time-choice-wrap">
             <label><b>산책 시간:</b></label>
-            <input type="range" id="timeSlider" min="10" max="60" value="30" step="5"
-                   oninput="document.getElementById('timeLabel').innerText=this.value+'분'">
+            <select id="timePreset" style="padding:8px; border:1px solid #ccc; border-radius:6px; font-size:14px;" onchange="onTimePresetChange()">
+                <option value="15">15분</option>
+                <option value="30" selected>30분</option>
+                <option value="60">60분</option>
+                <option value="recommend">추천</option>
+            </select>
             <span id="timeLabel" class="time-label">30분</span>
         </div>
         <button class="action-btn" style="background:#28a745;" onclick="generateLoopRoutes()">🐾 루프 경로 생성</button>
@@ -96,6 +133,9 @@
     <div id="smallScaleLegend" style="display:none; position:absolute; bottom:30px; left:10px; z-index:1000; background:rgba(255,255,255,0.95); padding:15px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.2); font-size:14px; min-width:250px; line-height:1.6;">
         <div style="font-weight:900; color:#28a745; margin-bottom:8px; font-size:16px; border-bottom:2px solid #28a745; padding-bottom:4px;">🐾 주변 루프 경로</div>
         <div id="legendContent">경로를 생성해주세요.</div>
+        <div id="routeExplanationPanel" style="margin-top:10px; padding-top:10px; border-top:1px solid #e5e5e5; color:#444; font-size:13px;">
+            경로를 선택하면 설명이 여기에 표시됩니다.
+        </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -162,10 +202,80 @@
         var routeLayers = [];   // 각 경로별 LayerGroup
         var startMarkerLayer = L.layerGroup().addTo(map);
         var activeRouteIdx = -1; // -1 = 전체 보기
+        var routeExplanations = [];
+
+        function escapeHtml(text) {
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function renderExplanationHtml(rawText) {
+            var text = String(rawText || '').trim();
+            if (!text || text === '설명 없음') {
+                return '<div style="color:#666;">설명이 없습니다.</div>';
+            }
+
+            var safeText = escapeHtml(text);
+            // 라벨이 없는 자연스러운 텍스트로 직접 표시
+            var html = '<div style="white-space:normal; word-break:break-word; overflow-wrap:anywhere; line-height:1.65; color:#333; padding:8px 0;">'
+                + safeText.replace(/\n/g, '<br>')
+                + '</div>';
+            return html;
+        }
+
+        function recommendWalkMinutes() {
+            var minutes = 30;
+
+            var size = document.getElementById('dogSize').value;
+            var ageGroup = document.getElementById('dogAgeGroup').value;
+            var energy = document.getElementById('dogEnergy').value;
+            var isLongBack = document.getElementById('longBack').checked;
+            var isBrachycephalic = document.getElementById('brachycephalic').checked;
+            var heatSensitive = document.getElementById('heatSensitive').checked;
+            var jointSensitive = document.getElementById('jointSensitive').checked;
+
+            if (size === '소형') minutes -= 5;
+            else if (size === '대형') minutes += 5;
+
+            if (ageGroup === '강아지' || ageGroup === '노령견') minutes -= 5;
+
+            if (energy === '낮음') minutes -= 10;
+            else if (energy === '높음') minutes += 10;
+
+            if (jointSensitive || isLongBack) minutes -= 5;
+            if (heatSensitive || isBrachycephalic) minutes -= 5;
+
+            minutes = Math.max(15, Math.min(60, minutes));
+            return Math.round(minutes);
+        }
+
+        function getSelectedWalkMinutes() {
+            var preset = document.getElementById('timePreset').value;
+            if (preset === 'recommend') {
+                return recommendWalkMinutes();
+            }
+            return parseInt(preset, 10);
+        }
+
+        function onTimePresetChange() {
+            var preset = document.getElementById('timePreset').value;
+            var label = document.getElementById('timeLabel');
+            if (preset === 'recommend') {
+                var recommended = recommendWalkMinutes();
+                label.innerText = '추천 ' + recommended + '분';
+            } else {
+                label.innerText = preset + '분';
+            }
+        }
 
         function showRoute(idx) {
             // idx === -1 → 전체 보기, 0+ → 해당 경로만
             activeRouteIdx = idx;
+            var explanationEl = document.getElementById('routeExplanationPanel');
 
             var allBounds = [];
             routeLayers.forEach(function (layerGroup, i) {
@@ -201,12 +311,22 @@
                     btn.style.boxShadow = 'none';
                 }
             });
+
+            if (idx === -1) {
+                explanationEl.innerHTML = '<div style="white-space:pre-wrap; line-height:1.55; color:#999;">경로를 하나 선택하면 추천 이유가 여기에 표시됩니다.</div>';
+            } else {
+                explanationEl.innerHTML = '<div style="line-height:1.55;">'
+                    + '<div style="font-weight:900; margin-bottom:8px; color:#28a745;">📝 경로 ' + (idx + 1) + ' 설명</div>'
+                    + renderExplanationHtml(routeExplanations[idx] || '설명 없음')
+                    + '</div>';
+            }
+
         }
 
         // ===== SmallScale: 루프 경로 생성 =====
         async function generateLoopRoutes() {
             var addr = document.getElementById('addrSmall').value;
-            var minutes = parseInt(document.getElementById('timeSlider').value);
+            var minutes = getSelectedWalkMinutes();
             var status = document.getElementById('statusSmall');
             var legendEl = document.getElementById('legendContent');
             if (!addr) { alert('출발지를 입력해주세요.'); return; }
@@ -217,8 +337,10 @@
             startMarkerLayer.clearLayers();
             routeLayers.forEach(function (l) { map.removeLayer(l); });
             routeLayers = [];
+            routeExplanations = [];
             activeRouteIdx = -1;
             legendEl.innerHTML = '생성 중...';
+            document.getElementById('routeExplanationPanel').innerHTML = '설명 생성 중...';
 
             try {
                 // 1. 주소 → 좌표 (대한민국 한정, 검색어 보강)
@@ -237,23 +359,54 @@
 
                 status.innerText = '루프 경로 생성 중... (최초 실행 시 최대 30초)';
 
+                var dogProfile = {
+                    size: document.getElementById('dogSize').value || null,
+                    age_group: document.getElementById('dogAgeGroup').value || null,
+                    energy: document.getElementById('dogEnergy').value || null,
+                    is_long_back: document.getElementById('longBack').checked,
+                    is_brachycephalic: document.getElementById('brachycephalic').checked,
+                    noise_sensitive: document.getElementById('noiseSensitive').checked,
+                    heat_sensitive: document.getElementById('heatSensitive').checked,
+                    joint_sensitive: document.getElementById('jointSensitive').checked
+                };
+
+                var walkCondition = {
+                    crowd_preference: document.getElementById('crowdPreference').value || null,
+                    slope_preference: document.getElementById('slopePreference').value || null,
+                    time_min: minutes
+                };
+
                 // 2. SmallScale API 호출
                 var apiRes = await fetch('/api/routes/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         user_lat: lat, user_lng: lng,
-                        target_minutes: minutes, num_routes: 3
+                        target_minutes: minutes, num_routes: 3,
+                        dog_profile: dogProfile,
+                        walk_condition: walkCondition,
+                        use_ai_explanation: true
                     })
                 });
                 if (!apiRes.ok) throw new Error('API 서버 오류 (status: ' + apiRes.status + ')');
                 var data = await apiRes.json();
                 status.style.display = 'none';
 
+                var noMatchFound = !!data.no_match_found;
+                var noMatchMessage = data.no_match_message || '';
+
                 if (!data.routes || data.routes.length === 0) {
-                    alert('조건에 맞는 경로를 찾지 못했습니다.\n다른 위치나 시간을 시도해보세요.');
-                    legendEl.innerHTML = '경로 없음';
+                    var emptyMessage = noMatchMessage || '조건에 맞는 경로를 찾지 못했습니다. 다른 위치나 시간을 시도해보세요.';
+                    alert(emptyMessage);
+                    legendEl.innerHTML = '<div style="padding:10px; border:1px solid #f0c36d; background:#fff8e1; border-radius:8px; color:#7a5a00; line-height:1.55;">'
+                        + escapeHtml(emptyMessage)
+                        + '</div>';
                     return;
+                }
+
+                if (noMatchFound) {
+                    status.style.display = 'block';
+                    status.innerText = noMatchMessage || '조건에 맞는 경로를 찾지 못해 기본 경로로 대체했습니다.';
                 }
 
                 // 3. 출발점 마커 (요청한 실제 위치에 표시)
@@ -277,16 +430,22 @@
                     var color = routeColors[idx % routeColors.length];
                     var coords = route.polyline;
                     var distKm = (route.total_distance_m / 1000).toFixed(2);
+                    var explanation = route.route_explanation ? route.route_explanation : '설명 없음';
+                    routeExplanations.push(explanation);
 
                     // 각 경로를 별도 LayerGroup에 추가
                     var layerGroup = L.layerGroup().addTo(map);
                     L.polyline(coords, { color: color, weight: 6, opacity: 0.8 })
                         .addTo(layerGroup)
-                        .bindPopup('<b>경로 ' + (idx + 1) + '</b><br>'
+                        .bindPopup(
+                            '<div style="width:210px; max-width:210px;">'
+                            + '<b>경로 ' + route.route_id + '</b><br>'
                             + route.estimated_minutes + '분 / '
-                            + route.total_distance_m + 'm');
-                    
-                    // 레이어 저장
+                            + route.total_distance_m + 'm<br>'
+                            + '<span style="font-size:11px; color:#666;">설명은 하단 카드에서 확인</span>'
+                            + '</div>',
+                            { maxWidth: 220, minWidth: 220 }
+                        );
                     routeLayers.push(layerGroup);
 
                     legendHtml += '<button class="route-toggle-btn" data-idx="' + idx + '" '
@@ -304,7 +463,16 @@
                         + '</button>';
                 });
 
+                if (noMatchFound) {
+                    legendHtml = '<div style="padding:10px; margin-bottom:10px; border:1px solid #f0c36d; background:#fff8e1; border-radius:8px; color:#7a5a00; line-height:1.55;">'
+                        + '<b>조건 미충족</b><br>'
+                        + escapeHtml(noMatchMessage || '조건에 맞는 경로를 찾지 못해 기본 경로로 대체했습니다.')
+                        + '</div>'
+                        + legendHtml;
+                }
+
                 legendEl.innerHTML = legendHtml;
+                document.getElementById('routeExplanationPanel').innerHTML = '<div style="white-space:pre-wrap; line-height:1.55; color:#999;">경로를 하나 선택하면 추천 이유가 여기에 표시됩니다.</div>';
                 map.fitBounds(bounds, { padding: [50, 50] });
 
             } catch (err) {
@@ -314,6 +482,9 @@
                 legendEl.innerHTML = '에러 발생';
             }
         }
+
+        // 초기 라벨 세팅
+        onTimePresetChange();
 
         // ===== LargeScale: 돌발 정보 =====
         async function toggleHazards() {
@@ -573,9 +744,9 @@
                             trail.polyline.forEach(p => pathBounds.push(p));
                         } else if (trail.end_lat && trail.end_lng) {
                             var endPoint = [trail.end_lat, trail.end_lng];
-                            L.polyline([startPoint, endPoint], { color: '#dc3545', weight: 5, opacity: 0.7, dashArray: '5, 10' })
+                            L.polyline([startPoint, endPoint], { color: '#6c757d', weight: 5, opacity: 0.7 })
                                 .addTo(markersGroup)
-                                .bindPopup(trail.trail_name + " (공간 데이터 없음 / 점선 폴백)");
+                                .bindPopup(trail.trail_name + " (공간 데이터 없음 / 실선 폴백)");
                             pathBounds.push(endPoint);
                         }
                     }
