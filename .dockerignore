@@ -17,6 +17,9 @@ env/
 
 # Large Raw Geodata (Only runtime caches/SHPs are copied)
 data/walkwayData/Vworld/
+data/walkwayData/GIPSProject/
+data/walkwayData/processed/
+data/walkwayData/*cache*.json
 data/walkwayData/*.pbf
 data/walkwayData/*.zip
 data/playgroundData/*.zip

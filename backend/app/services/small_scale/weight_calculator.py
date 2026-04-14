@@ -42,48 +42,26 @@ def calculate_edge_weight(data, config):
     # --- 1. 도로 유형(highway) 페널티 ---
     hw_config = config.get('highway_penalty', {})
     highway = data.get('highway', 'unknown')
-    hw_penalty = hw_config.get(highway, hw_config.get('unknown', 1.5))
+    hw_penalty = hw_config.get(highway, hw_config.get('unknown', 1.2))
 
-    # --- 2. 도로 폭(width) 페널티 ---
-    w_config = config.get('width_penalty', {})
-    width = data.get('width_m') or _parse_width(data.get('width'))
-
-    if width is not None:
-        if width < w_config.get('narrow_threshold_m', 1.5):
-            w_penalty = w_config.get('narrow_multiplier', 3.0)
-        else:
-            w_penalty = 1.0
-    else:
-        w_penalty = w_config.get('no_data_multiplier', 1.1)
-
-    # --- 3. 노면(surface) 페널티 ---
-    sf_config = config.get('surface_penalty', {})
-    surface = data.get('surface') or 'unknown'
-    if isinstance(surface, list):
-        surface = surface[0]
-    sf_penalty = sf_config.get(surface, sf_config.get('unknown', 1.1))
-
-    # --- 4. 계단(stairs) 인접 페널티 ---
+    # --- 2. 계단(stairs) 인접 페널티 ---
     stairs_config = config.get('stairs_penalty', {})
-    if data.get('near_stairs', False):
-        st_penalty = stairs_config.get('multiplier', 4.0)
-    else:
-        st_penalty = 1.0
+    st_penalty = stairs_config.get('multiplier', 10.0) if data.get('near_stairs', False) else 1.0
 
-    # --- 5. 공원/놀이터(leisure) 보너스 ---
+    # --- 3. 공원/놀이터(leisure) 보너스 ---
     leisure_config = config.get('leisure_bonus', {})
     near_leisure = data.get('near_leisure')
     if near_leisure == 'dog_park':
-        l_bonus = leisure_config.get('dog_park_multiplier', 0.5)
+        l_bonus = leisure_config.get('dog_park_multiplier', 0.7)
     elif near_leisure == 'park':
-        l_bonus = leisure_config.get('park_multiplier', 0.7)
+        l_bonus = leisure_config.get('park_multiplier', 0.8)
     else:
         l_bonus = 1.0
 
-    # --- 최종 비용 ---
-    final_cost = base_cost * hw_penalty * w_penalty * sf_penalty * st_penalty * l_bonus
+    # --- 최종 비용: 단순 거리 * 도로페널티 * 계단페널티 * 보너스 ---
+    final_cost = base_cost * hw_penalty * st_penalty * l_bonus
 
-    return max(final_cost, 0.01)  # 0 이하 방지
+    return max(final_cost, 0.01)
 
 
 def apply_weights_to_graph(G, config):
@@ -114,7 +92,7 @@ def apply_weights_to_graph(G, config):
         weight_stats['count'] += 1
 
     avg = weight_stats['sum'] / weight_stats['count'] if weight_stats['count'] > 0 else 0
-    print(f"⚖️ 가중치 부여 완료: {weight_stats['count']:,}개 엣지")
+    print(f"Weight application complete: {weight_stats['count']:,} edges")
     print(f"   범위: {weight_stats['min']:.2f} ~ {weight_stats['max']:.2f} (평균: {avg:.2f})")
 
     return G

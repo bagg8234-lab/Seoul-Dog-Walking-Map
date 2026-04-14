@@ -165,24 +165,38 @@
             // idx === -1 → 전체 보기, 0+ → 해당 경로만
             activeRouteIdx = idx;
 
-            routeLayers.forEach(function (layer, i) {
+            var allBounds = [];
+            routeLayers.forEach(function (layerGroup, i) {
                 if (idx === -1 || idx === i) {
-                    if (!map.hasLayer(layer)) map.addLayer(layer);
+                    if (!map.hasLayer(layerGroup)) map.addLayer(layerGroup);
+                    // 바운즈 수집
+                    layerGroup.eachLayer(function(l) {
+                        if (l.getLatLngs) {
+                            l.getLatLngs().forEach(p => allBounds.push(p));
+                        }
+                    });
                 } else {
-                    if (map.hasLayer(layer)) map.removeLayer(layer);
+                    if (map.hasLayer(layerGroup)) map.removeLayer(layerGroup);
                 }
             });
+
+            // 줌 조정 (경로가 있을 때만)
+            if (allBounds.length > 0) {
+                map.fitBounds(allBounds, { padding: [50, 50], maxZoom: 16 });
+            }
 
             // 범례 버튼 활성 상태 업데이트
             var btns = document.querySelectorAll('.route-toggle-btn');
             btns.forEach(function (btn) {
                 var btnIdx = parseInt(btn.getAttribute('data-idx'));
                 if (btnIdx === idx) {
-                    btn.style.outline = '3px solid #333';
-                    btn.style.fontWeight = '900';
+                    btn.classList.add('active-route-btn');
+                    btn.style.borderColor = '#333';
+                    btn.style.boxShadow = 'inset 0 0 5px rgba(0,0,0,0.1)';
                 } else {
-                    btn.style.outline = 'none';
-                    btn.style.fontWeight = 'normal';
+                    btn.classList.remove('active-route-btn');
+                    btn.style.borderColor = '#ddd';
+                    btn.style.boxShadow = 'none';
                 }
             });
         }
@@ -205,8 +219,10 @@
             legendEl.innerHTML = '생성 중...';
 
             try {
-                // 1. 주소 → 좌표
-                var geoUrl = 'https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(addr);
+                // 1. 주소 → 좌표 (대한민국 한정, 검색어 보강)
+                var queryAddr = addr.includes('서울') || addr.includes('경기') ? addr : '서울 ' + addr;
+                var geoUrl = 'https://nominatim.openstreetmap.org/search?format=json&q=' 
+                           + encodeURIComponent(queryAddr) + '&countrycodes=kr&limit=1';
                 var res = await fetch(geoUrl, { headers: { 'Accept-Language': 'ko' } });
                 var geoData = await res.json();
                 if (!geoData || geoData.length === 0) {
@@ -262,26 +278,27 @@
 
                     // 각 경로를 별도 LayerGroup에 추가
                     var layerGroup = L.layerGroup().addTo(map);
-                    L.polyline(coords, { color: color, weight: 5, opacity: 0.8 })
+                    L.polyline(coords, { color: color, weight: 6, opacity: 0.8 })
                         .addTo(layerGroup)
-                        .bindPopup('<b>경로 ' + route.route_id + '</b><br>'
+                        .bindPopup('<b>경로 ' + (idx + 1) + '</b><br>'
                             + route.estimated_minutes + '분 / '
                             + route.total_distance_m + 'm');
+                    
+                    // 레이어 저장
                     routeLayers.push(layerGroup);
-
-                    coords.forEach(function (c) { bounds.push(c); });
 
                     legendHtml += '<button class="route-toggle-btn" data-idx="' + idx + '" '
                         + 'onclick="showRoute(' + idx + ')" '
                         + 'style="display:flex; align-items:center; gap:8px; width:100%; '
-                        + 'padding:8px 10px; margin-bottom:4px; border:1px solid #ddd; '
-                        + 'border-radius:6px; background:white; cursor:pointer; font-size:13px; '
-                        + 'transition: background 0.15s;"'
-                        + 'onmouseenter="this.style.background=\'#f0f0f0\'" '
-                        + 'onmouseleave="this.style.background=\'white\'">'
-                        + '<span style="color:' + color + '; font-size:20px; line-height:1;">●</span>'
-                        + '<span>경로 ' + route.route_id + ': '
-                        + route.estimated_minutes + '분 / ' + distKm + 'km</span>'
+                        + 'padding:10px; margin-bottom:6px; border:2px solid #ddd; '
+                        + 'border-radius:8px; background:white; cursor:pointer; font-size:13px; '
+                        + 'transition: all 0.2s; text-align:left;">'
+                        + '<span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:' + color + ';"></span>'
+                        + '<div style="flex:1;">'
+                        + '<div style="font-weight:bold;">경로 ' + (idx + 1) + '</div>'
+                        + '<div style="font-size:11px; color:#666;">' + route.estimated_minutes + '분 / ' + distKm + 'km</div>'
+                        + '</div>'
+                        + '<div style="font-size:12px;">→</div>'
                         + '</button>';
                 });
 
@@ -365,7 +382,8 @@
             markersGroup.clearLayers();
 
             try {
-                var geoUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}`;
+                var queryAddr = addr.includes('서울') || addr.includes('경기') ? addr : '서울 ' + addr;
+                var geoUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryAddr)}&countrycodes=kr&limit=1`;
                 var res = await fetch(geoUrl, { headers: { 'Accept-Language': 'ko' } });
                 var geoData = await res.json();
 

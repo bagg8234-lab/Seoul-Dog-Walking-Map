@@ -9,8 +9,11 @@ venv/
 .venv/
 
 # ⭐️ GitHub 용량 한도(100MB) 방지용 무시 폴더/파일
-# 이미 JSON 캐시로 뽑아두었기 때문에 800MB짜리 원본 SHP 폴더는 업로드하지 않습니다.
+# SHP 원본 데이터 및 전처리 캐시 파일은 용량이 크므로 업로드하지 않습니다.
 data/walkwayData/Vworld/
+data/walkwayData/GIPSProject/
+data/walkwayData/processed/
+data/walkwayData/*cache*.json
 data/walkwayData/*.pbf
 data/walkwayData/*.zip
 data/playgroundData/*.zip

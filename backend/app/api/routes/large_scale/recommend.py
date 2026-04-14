@@ -1,7 +1,7 @@
 from fastapi import APIRouter
-from app.models.trail import TrailRecommendationRequest, TrailRecommendationResponse, HazardResponse
-from app.models.weather import WeatherRequest, WeatherResponse
-from app.services.trail_recommend import get_recommended_trails
+from app.models.large_scale.trail import TrailRecommendationRequest, TrailRecommendationResponse, HazardResponse
+from app.models.large_scale.weather import WeatherRequest, WeatherResponse
+from app.services.large_scale.trail_recommend import get_recommended_trails
 
 router = APIRouter()
 
@@ -35,7 +35,7 @@ def get_weather(request: WeatherRequest):
     클라이언트에서 요청한 특정 지역(area_name)의 
     날씨 정보만 따로 추출하여 반환하는 독립된 엔드포인트입니다.
     """
-    from app.services.weather_congestion import fetch_city_data
+    from app.services.large_scale.weather_congestion import fetch_city_data
     
     weather_info = {}
     city_data = fetch_city_data(request.area_name)
@@ -79,7 +79,7 @@ def get_hazards():
     지도에 렌더링할 100건의 캐싱된 돌발정보(TOPIS)와
     실시간 재난문자(행정안전부)를 하이브리드로 병합하여 반환합니다.
     """
-    from app.services.weather_congestion import fetch_disaster_messages
+    from app.services.large_scale.weather_congestion import fetch_disaster_messages
     from app.core.config import settings
     import os
     import json

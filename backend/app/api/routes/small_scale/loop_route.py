@@ -1,6 +1,6 @@
 from fastapi import APIRouter
-from app.models.route import LoopRouteRequest, LoopRouteResponse
-from app.services.loop_route_service import generate_routes
+from app.models.small_scale.route import LoopRouteRequest, LoopRouteResponse
+from app.services.small_scale.loop_route_service import generate_routes
 
 router = APIRouter()
 

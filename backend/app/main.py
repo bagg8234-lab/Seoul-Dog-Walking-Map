@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 import os
-from app.api.routes import recommend
-from app.api.routes import loop_route
+from app.api.routes.large_scale import recommend
+from app.api.routes.small_scale import loop_route
 
 from fastapi.middleware.cors import CORSMiddleware
 

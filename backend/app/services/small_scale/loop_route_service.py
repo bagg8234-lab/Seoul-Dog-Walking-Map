@@ -12,11 +12,11 @@ import math
 import yaml
 
 from app.core.config import settings
-from app.services.graph_builder import build_graph, keep_significant_components
-from app.services.overlay_loader import apply_all_overlays
-from app.services.weight_calculator import apply_weights_to_graph
-from app.services.loop_router import generate_loop_routes
-from app.models.route import LoopRouteInfo
+from app.services.small_scale.graph_builder import build_graph, keep_significant_components
+from app.services.small_scale.overlay_loader import apply_all_overlays
+from app.services.small_scale.weight_calculator import apply_weights_to_graph
+from app.services.small_scale.loop_router import generate_loop_routes
+from app.models.small_scale.route import LoopRouteInfo
 
 # === 전역 캐싱 (서버 수명 동안 1회만 로드) ===
 _G_weighted = None
@@ -100,15 +100,9 @@ def generate_routes(user_lat, user_lng, target_minutes=30, num_routes=3):
     user_coord = [user_lat, user_lng]
 
     for idx, r in enumerate(raw_routes):
-        # 1. 노드 좌표를 [lat, lng] 형식 polyline으로 변환
-        path_coords = [
-            [_G_weighted.nodes[n]['y'], _G_weighted.nodes[n]['x']]
-            for n in r['path_nodes']
-        ]
-        
-        # 2. 사용자의 실제 요청 위치를 시작과 끝에 삽입 (시각적 정확성)
-        # 만약 첫 노드와 유저 위치가 너무 멀지 않다면 자연스럽게 연결됨
-        full_polyline = [user_coord] + path_coords + [user_coord]
+        # 1. 로컬 라우터에서 생성한 고품질(Geometry 포함) 폴리라인 사용
+        # 사용자 실제 위치와의 연결성을 위해 시작/끝에 유저 좌표 삽입
+        full_polyline = [user_coord] + r['polyline'] + [user_coord]
 
         result.append(LoopRouteInfo(
             route_id=idx + 1,

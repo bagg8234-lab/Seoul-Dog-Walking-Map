@@ -50,13 +50,13 @@ def build_graph(edges_geojson_path: str, precision: int = 6) -> nx.MultiGraph:
         엣지 속성: highway, surface, width, width_m, smoothness, length, name, osm_id
     """
     path = Path(edges_geojson_path)
-    print(f"📂 엣지 데이터 로드 중: {path.name}")
+    print(f"Loading edge data: {path.name}")
 
     with open(path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
     features = data['features']
-    print(f"   총 {len(features):,}개 피처 발견")
+    print(f"   Total {len(features):,} features found")
 
     G = nx.MultiGraph()
 
@@ -76,8 +76,12 @@ def build_graph(edges_geojson_path: str, precision: int = 6) -> nx.MultiGraph:
             G.add_node(end_coord, x=end_coord[0], y=end_coord[1])
 
         # 엣지 속성 구성
+        highway = props.get('highway', 'unknown')
+        if highway == 'steps':
+            continue
+
         edge_attrs = {
-            'highway': props.get('highway', 'unknown'),
+            'highway': highway,
             'surface': props.get('surface'),
             'width': props.get('width'),
             'width_m': _parse_width(props.get('width')),
@@ -85,12 +89,13 @@ def build_graph(edges_geojson_path: str, precision: int = 6) -> nx.MultiGraph:
             'length': props.get('length', 10.0),
             'name': props.get('name'),
             'osm_id': props.get('id'),
+            'geometry': coords, # 굴곡 정보(좌표 리스트) 전체 저장
         }
 
         G.add_edge(start_coord, end_coord, **edge_attrs)
         edge_count += 1
 
-    print(f"✅ 그래프 구성 완료: 노드 {len(G.nodes):,}개, 엣지 {edge_count:,}개")
+    print(f"Graph construction complete: nodes {len(G.nodes):,}, edges {edge_count:,}")
 
     # 연결 컴포넌트 분석
     components = list(nx.connected_components(G))
@@ -98,7 +103,7 @@ def build_graph(edges_geojson_path: str, precision: int = 6) -> nx.MultiGraph:
         print(f"   🟢 단일 연결 그래프 (모든 노드가 연결됨)")
     else:
         sizes = sorted([len(c) for c in components], reverse=True)
-        print(f"   🟡 {len(components)}개의 연결 컴포넌트 발견")
+        print(f"   {len(components)} connected components found")
         print(f"      최대 컴포넌트: {sizes[0]:,}개 노드")
         print(f"      상위 5개 크기: {sizes[:5]}")
         # 가장 큰 컴포넌트만 유지할지 여부는 호출자가 결정
@@ -116,7 +121,7 @@ def keep_largest_component(G: nx.MultiGraph) -> nx.MultiGraph:
     largest = max(components, key=len)
     nodes_to_remove = set(G.nodes()) - largest
     G.remove_nodes_from(nodes_to_remove)
-    print(f"🔧 최대 컴포넌트 유지: {len(largest):,}개 노드 (제거: {len(nodes_to_remove):,}개)")
+    print(f"Keep largest component: {len(largest):,} nodes (Removed: {len(nodes_to_remove):,} nodes)")
     return G
 
 
@@ -139,7 +144,7 @@ def keep_significant_components(G: nx.MultiGraph, min_nodes: int = 100) -> nx.Mu
     G.remove_nodes_from(nodes_to_remove)
 
     sizes = sorted([len(c) for c in significant], reverse=True)
-    print(f"🔧 유의미 컴포넌트 유지: {len(significant)}개 (min_nodes={min_nodes})")
+    print(f"Significant components maintained: {len(significant)} (min_nodes={min_nodes})")
     print(f"   유지: {len(keep_nodes):,}개 노드, 제거: {len(nodes_to_remove):,}개")
     print(f"   컴포넌트 크기: {sizes[:10]}")
     return G
