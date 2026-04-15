@@ -34,8 +34,13 @@ class Settings:
     # 공공데이터포털 행정안전부 재난문자 API KEY
     DISASTER_API_KEY = os.getenv("DISASTER_API_KEY")
 
-    # PostgreSQL 연결 문자열 (예: postgresql://user:pass@host:5432/dbname)
-    DATABASE_URL = os.getenv("DATABASE_URL")
+    # ── PostgreSQL (Azure DB for PostgreSQL) 연결 정보 ──────────────
+    # Azure Web App 환경변수 또는 .env 파일에서 로드
+    DB_HOST = os.getenv("DB_HOST", "team3postgresql.postgres.database.azure.com")
+    DB_PORT = os.getenv("DB_PORT", "5432")
+    DB_NAME = os.getenv("DB_NAME", "dogwalk")
+    DB_USER = os.getenv("DB_USER", "dogwalk_admin")
+    DB_PASSWORD = os.getenv("DB_PASSWORD", "")  # 반드시 환경변수로 주입
 
     # 시나리오1 필터 임계값
     SCENARIO1_HOT_TEMP_C = float(os.getenv("SCENARIO1_HOT_TEMP_C", "27"))
