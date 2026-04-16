@@ -67,4 +67,13 @@ class Settings:
     OSM_STAIRS_PATH = os.path.join(DATA_DIR, "osm", "stairs.geojson")
     WEIGHTS_YAML_PATH = os.path.join(BACKEND_DIR, "config", "weights.yaml")
 
+    # ── Azure OpenAI 환경변수 ──────────────
+    AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+    AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+    AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")
+    AZURE_OPENAI_MODEL_NAME = os.getenv("AZURE_OPENAI_MODEL_NAME")
+    AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+
+    
+
 settings = Settings()

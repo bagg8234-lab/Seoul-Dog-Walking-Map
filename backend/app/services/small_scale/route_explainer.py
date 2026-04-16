@@ -4,6 +4,7 @@ import urllib.request
 from typing import Dict, List, Optional
 
 from app.models.small_scale.route import LoopRouteInfo
+from app.core.config import settings
 
 
 def _parse_active_rules(value: str) -> set:
@@ -90,10 +91,11 @@ def _fallback_explanations(
 
 
 def _call_azure_openai(prompt: str) -> str:
-    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
-    api_key = os.getenv("AZURE_OPENAI_API_KEY")
-    api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
+
+    endpoint = settings.AZURE_OPENAI_ENDPOINT
+    deployment = settings.AZURE_OPENAI_DEPLOYMENT
+    api_key = settings.AZURE_OPENAI_API_KEY
+    api_version = settings.AZURE_OPENAI_API_VERSION or "2024-10-21"
 
     if not endpoint or not deployment or not api_key:
         raise RuntimeError("Azure OpenAI environment variables are not configured")
