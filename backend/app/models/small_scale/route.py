@@ -33,26 +33,33 @@ class LoopRouteRequest(BaseModel):
     dog: Optional[DogProfile] = Field(None, description="반려견 고정 프로필")
     walk: Optional[WalkCondition] = Field(None, description="요청 시점 산책 조건")
 
+
     @model_validator(mode="after")
-    def normalize_payload(self):
-        if self.walk is not None:
-            if self.user_lat is None and self.walk.latitude is not None:
-                self.user_lat = self.walk.latitude
-            if self.user_lng is None and self.walk.longitude is not None:
-                self.user_lng = self.walk.longitude
-            if self.target_minutes is None and self.walk.time_min is not None:
+    def compute_target_minutes(self):
+        # walk 정보 반영
+        if self.walk:
+            self.user_lat = self.user_lat or self.walk.latitude
+            self.user_lng = self.user_lng or self.walk.longitude
+            if self.target_minutes is None:
                 self.target_minutes = self.walk.time_min
 
-            # 프론트 표기값 보정
-            if self.walk.crowd_preference == "혼잡도 상관없음":
-                self.walk.crowd_preference = "상관없음"
-
-        if self.target_minutes is None:
-            self.target_minutes = 30
-
-        if self.user_lat is None or self.user_lng is None:
-            raise ValueError("user_lat/user_lng 또는 walk.latitude/walk.longitude 중 하나는 반드시 필요합니다.")
-
+        # 추천 로직: None, 0, 5 미만 모두 잡기
+        if self.target_minutes is None or self.target_minutes == 0 or (isinstance(self.target_minutes, int) and self.target_minutes < 5):
+            if self.dog:
+                minutes = 30
+                energy_map = {"매우 높음": 20, "높음": 10, "보통": 0, "낮음": -10, "매우 낮음": -20}
+                minutes += energy_map.get(self.dog.energy, 0)
+                age_map = {"노령견": -10, "강아지": -5, "성견": 0}
+                minutes += age_map.get(self.dog.age_group, 0)
+                if self.dog.joint_sensitive or self.dog.is_long_back or self.dog.is_brachycephalic:
+                    minutes -= 10
+                if self.dog.size == "소형":
+                    minutes -= 5
+                elif self.dog.size == "대형":
+                    minutes += 5
+                self.target_minutes = max(10, min(90, minutes))
+            else:
+                self.target_minutes = 30
         return self
 
 

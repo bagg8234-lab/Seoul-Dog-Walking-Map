@@ -107,12 +107,15 @@ def _call_azure_openai(prompt: str) -> str:
         "messages": [
             {
                 "role": "system",
-                "content": "당신은 반려견 산책 추천 설명 생성기입니다. 1~2문장으로 간결하고 안전 중심으로 설명하세요.",
+                "content": (
+                    "당신은 반려견 산책 코스의 특징을 잡아내는 전문 가이드입니다. "
+                    "제공된 데이터를 바탕으로 각 코스의 매력을 다채롭고 생생하게 설명하세요."
+                ),
             },
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.2,
-        "max_tokens": 220,
+        "temperature": 0.4,
+        "max_tokens": 500,
     }
 
     req = urllib.request.Request(
@@ -137,71 +140,89 @@ def build_route_explanations(
     xai_context: Optional[Dict[str, str]] = None,
     route_profiles: Optional[List[Dict[str, object]]] = None,
 ) -> List[str]:
+
+    print("[DEBUG] build_route_explanations 진입")
     if not routes:
+        print("[DEBUG] build_route_explanations: routes 없음, 빈 리스트 반환")
+        print("[DEBUG] build_route_explanations 탈출")
         return []
+
 
     fallback = _fallback_explanations(routes, filter_summary, xai_context, route_profiles)
 
-    target_minutes = (xai_context or {}).get("target_minutes", "미지정")
-    activated_rules = (xai_context or {}).get("activated_rules", "없음")
-    user_conditions = (xai_context or {}).get("user_conditions", "없음")
-    area_congest_lvl = (xai_context or {}).get("area_congest_lvl", "미지정")
+    # --- 새 프롬프트: 설명 구조/예시/지침 제거, 비교 기반 자유 설명 ---
+    import statistics
     route_profiles = route_profiles or [{} for _ in routes]
 
-    lines = []
-    for idx, route in enumerate(routes, start=1):
-        profile = route_profiles[idx - 1] if idx - 1 < len(route_profiles) else {}
-        warning_text = ", ".join(route.route_warnings) if route.route_warnings else "없음"
-        time_status = _format_time_status(route.estimated_minutes, target_minutes)
-        vehicle_ratio = float(profile.get('vehicle_ratio', 0) or 0.0)
-        if vehicle_ratio >= 0.45:
-            traffic_desc = "차량 통행 많음"
-        elif vehicle_ratio <= 0.20:
-            traffic_desc = "차량 통행 적음"
-        else:
-            traffic_desc = "차량 통행 보통"
+    # 경로별 주요 feature 추출
+    features = []
+    for idx, (route, profile) in enumerate(zip(routes, route_profiles), start=1):
+        features.append({
+            "index": idx,
+            "distance_m": route.total_distance_m,
+            "estimated_minutes": route.estimated_minutes,
+            "has_steep": bool(profile.get("has_steep")),
+            "has_stairs": bool(profile.get("has_stairs")),
+            "vehicle_ratio": float(profile.get("vehicle_ratio", 0) or 0.0),
+            "max_heat_risk": profile.get("max_heat_risk", None),
+            "warnings": route.route_warnings or [],
+        })
 
-        heat_risk = profile.get('max_heat_risk')
-        if profile.get('has_hot_surface_grade'):
-            heat_desc = "여름 노면 주의"
-        elif isinstance(heat_risk, (int, float)) and heat_risk >= 60:
-            heat_desc = "노면 열감 높음"
-        elif isinstance(heat_risk, (int, float)) and heat_risk <= 30:
-            heat_desc = "노면 열감 낮음"
-        else:
-            heat_desc = "노면 열감 보통"
+    # 전체 경로 통계 계산
+    def stat(key):
+        vals = [f[key] for f in features if isinstance(f[key], (int, float))]
+        return {
+            "mean": statistics.mean(vals) if vals else None,
+            "min": min(vals) if vals else None,
+            "max": max(vals) if vals else None,
+        }
 
-        lines.append(
-            f"[{idx}] 경로번호={route.route_id}, 시간={time_status}, 거리={route.total_distance_m}m, 경고={warning_text}, "
-            f"경사여부={'있음' if bool(profile.get('has_steep')) else '없음'}, 계단여부={'있음' if bool(profile.get('has_stairs')) else '없음'}, "
-            f"노면특성={heat_desc}, 교통특성={traffic_desc}, 도로종류수={len(profile.get('highways', []) or [])}, 혼잡도={area_congest_lvl}"
-        )
+    stats = {
+        "distance_m": stat("distance_m"),
+        "estimated_minutes": stat("estimated_minutes"),
+        "vehicle_ratio": stat("vehicle_ratio"),
+        "max_heat_risk": stat("max_heat_risk"),
+    }
+
+    persona_intro = (xai_context or {}).get("persona_intro", "우리 아이")
+    user_conditions = (xai_context or {}).get("user_conditions", "없음")
+    activated_rules = (xai_context or {}).get("activated_rules", "없음")
+    target_minutes = (xai_context or {}).get("target_minutes", "미지정")
 
     prompt = (
-        "너는 반려견 산책 경로 설명을 쓰는 도우미다.\n"
-        "각 경로마다 실제 데이터에서 눈에 띄는 특징을 2개 이상 골라, 자연스럽고 읽기 쉬운 한국어 한 문단으로 설명해라.\n"
-        "경로별 설명이 서로 다르게 느껴지도록 작성해라.\n"
-        "'A/B/C 형식', 대괄호 번호, 슬래시 나열(예: 경사/계단/노면/차량...) 같은 고정 틀은 쓰지 마라.\n"
-        "중요: heat_risk, vehicle_ratio, has_steep 같은 컬럼명/영문 키를 그대로 노출하지 마라.\n"
-        "숫자 비율(raw value)을 그대로 보여주기보다 '한적함/보통/차량 많음' 같은 사용자 언어로 바꿔라.\n"
-        "시간 설명은 반드시 목표 시간 대비 차이를 정확히 반영해라.\n"
-        "과장된 단정 표현(완벽, 무조건, 절대 안전)은 금지한다.\n"
-        "출력은 JSON 배열 문자열만 반환해라. 배열 길이는 경로 수와 동일해야 한다.\n\n"
-        f"페르소나: {(xai_context or {}).get('persona_intro', '우리 아이를 위해')}\n"
+        f"당신은 반려견 산책 코스의 특징을 잡아내는 전문 가이드입니다.\n"
+        f"아래는 여러 산책 경로의 데이터입니다. 각 경로의 특성을 다른 경로들과 비교하여, 각 경로만의 차별적 장점이나 분위기를 창의적으로 설명해 주세요.\n"
+        f"설명은 반드시 JSON 배열로만 반환하세요. (예시, 지침, 문장 구조 제한 없이 자유롭게)\n"
+        f"각 설명은 해당 경로가 다른 경로에 비해 어떤 점이 두드러지는지, 또는 상대적으로 어떤 분위기/장점이 있는지 중심으로 작성하세요.\n"
+        f"반려견 특징: {persona_intro}\n"
         f"사용자 입력 요약: {user_conditions}\n"
         f"활성 규칙: {activated_rules}\n"
         f"목표 시간: {target_minutes}분\n"
-        "각 경로 데이터:\n"
-        + "\n".join(lines)
+        f"경로별 데이터(JSON): {json.dumps(features, ensure_ascii=False)}\n"
+        f"전체 경로 통계(JSON): {json.dumps(stats, ensure_ascii=False)}\n"
     )
 
+    import traceback
     try:
+        print("[DEBUG] _call_azure_openai 호출 직전")
         response_text = _call_azure_openai(prompt)
-        parsed = json.loads(response_text)
+        print("[DEBUG] _call_azure_openai 응답:", response_text)
+        import re
+        def clean_json_response(response_text):
+            # ```json ... ``` 또는 ``` ... ``` 제거
+            return re.sub(r"^```(?:json)?|```$", "", response_text.strip(), flags=re.MULTILINE).strip()
+        cleaned_response = clean_json_response(response_text)
+        parsed = json.loads(cleaned_response)
         if isinstance(parsed, list) and len(parsed) == len(routes):
             cleaned = [str(item).strip() for item in parsed]
             if all(cleaned):
+                print("[AI 설명 생성 성공]", cleaned)
+                print("[DEBUG] build_route_explanations 탈출 (AI 설명)")
                 return cleaned
+        print("[DEBUG] build_route_explanations 탈출 (fallback)")
         return fallback
     except Exception:
+        print("[DEBUG] build_route_explanations except 진입")
+        print(traceback.format_exc())
+        print("[DEBUG] build_route_explanations 탈출 (except)")
         return fallback

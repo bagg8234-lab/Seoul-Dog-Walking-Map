@@ -15,8 +15,7 @@ from typing import Optional
 import networkx as nx
 
 from app.core.config import settings
-from app.services.small_scale.graph_builder import build_graph, keep_significant_components
-from app.services.small_scale.overlay_loader import apply_all_overlays
+from app.services.small_scale.graph_db_loader import build_graph_from_db
 from app.services.small_scale.weight_calculator import apply_weights_to_graph
 from app.services.small_scale.loop_router import generate_loop_routes
 from app.models.small_scale.route import LoopRouteInfo, DogProfile, WalkCondition, WeatherContext, RejectedRouteInfo
@@ -40,6 +39,7 @@ def _haversine_m(lon1, lat1, lon2, lat2):
     return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+
 def _ensure_graph_loaded():
     """그래프가 메모리에 없으면 빌드합니다 (1회만 실행)."""
     global _G_weighted, _config
@@ -47,7 +47,7 @@ def _ensure_graph_loaded():
     if _G_weighted is not None:
         return
 
-    print("🔄 SmallScale 그래프 빌드 시작...")
+    print("🔄 SmallScale 그래프 빌드 시작... (DB 기반)")
 
     # config 로드
     config_path = os.path.join(settings.BACKEND_DIR, "config", "weights.yaml")
@@ -55,19 +55,13 @@ def _ensure_graph_loaded():
         _config = yaml.safe_load(f)
     print(f"   ⚙️ 설정 로드: {config_path}")
 
-    # 그래프 빌드
-    edges_path = os.path.join(settings.DATA_DIR, "osm", "edges_clean.geojson")
-    G = build_graph(edges_path)
-    G = keep_significant_components(G, min_nodes=100)
+    # DB에서 그래프 빌드
+    # 테이블명은 실제 환경에 맞게 조정 필요
+    G = build_graph_from_db(edge_table="walk_features")
 
-    # 오버레이
-    stairs_path = os.path.join(settings.DATA_DIR, "osm", "stairs.geojson")
-    leisure_path = os.path.join(settings.DATA_DIR, "osm", "leisure_clean.geojson")
-    G = apply_all_overlays(G, stairs_path, leisure_path, _config)
-
-    # 가중치
+    # 가중치 적용
     _G_weighted = apply_weights_to_graph(G, _config)
-    print("✅ SmallScale 그래프 빌드 완료 (메모리 캐싱됨)")
+    print("✅ SmallScale 그래프 빌드 완료 (DB 기반, 메모리 캐싱됨)")
 
 
 def _find_nearest_node(G, lat, lon):

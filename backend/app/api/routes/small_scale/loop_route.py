@@ -20,6 +20,74 @@ def create_loop_routes(request: LoopRouteRequest):
     - routes: 필터 조건을 만족하는 추천 경로
     - rejected_routes: 필터 조건에 맞지 않아 제외된 경로 (시각화/검증용)
     """
+    # 산책 시간 추천 로직 직접 처리
+    if request.walk is not None:
+        if request.user_lat is None and request.walk.latitude is not None:
+            request.user_lat = request.walk.latitude
+        if request.user_lng is None and request.walk.longitude is not None:
+            request.user_lng = request.walk.longitude
+        if request.target_minutes is None and request.walk.time_min is not None:
+            request.target_minutes = request.walk.time_min
+        # 프론트 표기값 보정
+        if request.walk.crowd_preference == "혼잡도 상관없음":
+            request.walk.crowd_preference = "상관없음"
+
+    if request.target_minutes is None:
+        # dog 정보가 있으면 추천 산책 시간 직접 계산
+        if request.dog is not None:
+            # 기본값 설정
+            size = request.dog.size or "중형"
+            age = request.dog.age_group or "성견"
+            energy = request.dog.energy or "보통"
+            constraint = (
+                (request.dog.joint_sensitive is True)
+                or (request.dog.is_long_back is True)
+                or (request.dog.is_brachycephalic is True)
+            )
+
+            # 산책 시간 추천 로직 직접 작성
+            # 기본값: 30분
+            minutes = 30
+
+            # 에너지 레벨 반영
+            if energy == "매우 높음":
+                minutes += 20
+            elif energy == "높음":
+                minutes += 10
+            elif energy == "낮음":
+                minutes -= 10
+            elif energy == "매우 낮음":
+                minutes -= 20
+
+            # 나이 반영
+            if age == "노령견":
+                minutes -= 10
+            elif age == "강아지":
+                minutes -= 5
+
+            # 크기 반영
+            if size == "소형":
+                minutes -= 5
+            elif size == "대형":
+                minutes += 5
+
+            # 건강 제약 반영
+            if constraint:
+                minutes -= 10
+
+            # 최소/최대값 제한
+            if minutes < 10:
+                minutes = 10
+            if minutes > 90:
+                minutes = 90
+
+            request.target_minutes = minutes
+        else:
+            request.target_minutes = 30
+
+    if request.user_lat is None or request.user_lng is None:
+        raise ValueError("user_lat/user_lng 또는 walk.latitude/walk.longitude 중 하나는 반드시 필요합니다.")
+
     routes, rejected_routes, start_node, filter_info, no_match_found, no_match_message = generate_routes(
         user_lat=request.user_lat,
         user_lng=request.user_lng,

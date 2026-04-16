@@ -106,46 +106,97 @@ def collect_incident_profile(path_nodes: List, graph, hazard_radius_m: float = 1
         "nearest_hazard_type": None,
     }
 
-    if not incidents or not points:
-        return profile
-
+    # 기존 JSON 기반 돌발 체크
     nearest_distance = float("inf")
-    for incident in incidents:
-        ilat = incident.get("lat")
-        ilng = incident.get("lng")
-        if ilat is None or ilng is None:
-            continue
+    if incidents and points:
+        for incident in incidents:
+            ilat = incident.get("lat")
+            ilng = incident.get("lng")
+            if ilat is None or ilng is None:
+                continue
 
-        incident_type = str(incident.get("acc_type") or "돌발").strip()
-        radius = hazard_radius_m
-        if incident_type in {"사고", "통제"}:
-            radius = 140.0
-        elif incident_type in {"공사", "행사"}:
-            radius = 110.0
+            incident_type = str(incident.get("acc_type") or "돌발").strip()
+            radius = hazard_radius_m
+            if incident_type in {"사고", "통제"}:
+                radius = 140.0
+            elif incident_type in {"공사", "행사"}:
+                radius = 110.0
 
-        best_dist = float("inf")
-        for lon, lat in points:
-            dist = _haversine_m(lon, lat, float(ilng), float(ilat))
-            if dist < best_dist:
-                best_dist = dist
+            best_dist = float("inf")
+            for lon, lat in points:
+                dist = _haversine_m(lon, lat, float(ilng), float(ilat))
+                if dist < best_dist:
+                    best_dist = dist
 
-        if best_dist < nearest_distance:
-            nearest_distance = best_dist
-            profile["nearest_hazard_type"] = incident_type
-            profile["nearest_hazard_distance_m"] = round(best_dist, 1)
+            if best_dist < nearest_distance:
+                nearest_distance = best_dist
+                profile["nearest_hazard_type"] = incident_type
+                profile["nearest_hazard_distance_m"] = round(best_dist, 1)
 
-        if best_dist <= radius:
-            profile["hazard_used"] = True
-            profile["has_hazard"] = True
-            profile["hazard_count"] += 1
-            profile["hazard_hits"].append({
-                "acc_id": incident.get("acc_id"),
-                "acc_type": incident_type,
-                "acc_info": incident.get("acc_info", ""),
-                "lat": ilat,
-                "lng": ilng,
-                "distance_m": round(best_dist, 1),
-            })
+            if best_dist <= radius:
+                profile["hazard_used"] = True
+                profile["has_hazard"] = True
+                profile["hazard_count"] += 1
+                profile["hazard_hits"].append({
+                    "acc_id": incident.get("acc_id"),
+                    "acc_type": incident_type,
+                    "acc_info": incident.get("acc_info", ""),
+                    "lat": ilat,
+                    "lng": ilng,
+                    "distance_m": round(best_dist, 1),
+                })
+
+    # walk_environment 테이블 기반 돌발 체크 추가
+    import psycopg
+    from psycopg.rows import dict_row
+    database_url = os.getenv("DATABASE_URL")
+    if database_url and points:
+        try:
+            with psycopg.connect(database_url) as conn:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    # 경로 구간의 중심점 기준으로 반경 100m 내 walk_environment row 조회
+                    for lon, lat in points:
+                        cur.execute(
+                            """
+                            SELECT * FROM public.walk_environment
+                            WHERE ST_DWithin(
+                                geography(ST_MakePoint(%s, %s)),
+                                geography(ST_MakePoint(CAST(NULLIF(x, '') AS double precision), CAST(NULLIF(y, '') AS double precision))),
+                                100
+                            )
+                            LIMIT 1
+                            """,
+                            (lon, lat)
+                        )
+                        row = cur.fetchone()
+                        if row:
+                            acdnt_cnt = 0
+                            event_yn = 0
+                            # 컬럼명은 대소문자 구분 없이 접근
+                            if "ACDNT_CNT" in row:
+                                acdnt_cnt = int(row["ACDNT_CNT"] or 0)
+                            elif "acdnt_cnt" in row:
+                                acdnt_cnt = int(row["acdnt_cnt"] or 0)
+                            if "EVENT_YN" in row:
+                                event_yn = int(row["EVENT_YN"] or 0)
+                            elif "event_yn" in row:
+                                event_yn = int(row["event_yn"] or 0)
+                            if acdnt_cnt > 0 or event_yn == 1:
+                                profile["hazard_used"] = True
+                                profile["has_hazard"] = True
+                                profile["hazard_count"] += 1
+                                profile["hazard_hits"].append({
+                                    "acc_id": None,
+                                    "acc_type": "walk_environment",
+                                    "acc_info": f"walk_environment: ACDNT_CNT={acdnt_cnt}, EVENT_YN={event_yn}",
+                                    "lat": lat,
+                                    "lng": lon,
+                                    "distance_m": 0,
+                                })
+                                # 여러 포인트 중 하나라도 돌발이면 바로 종료
+                                break
+        except Exception as e:
+            pass  # DB 연결 실패 시 무시(기존 incident만 사용)
 
     if profile["hazard_count"] == 0 and nearest_distance != float("inf"):
         profile["nearest_hazard_distance_m"] = round(nearest_distance, 1)
