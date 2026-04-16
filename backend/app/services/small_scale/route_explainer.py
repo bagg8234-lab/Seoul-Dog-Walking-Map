@@ -216,7 +216,11 @@ def build_route_explanations(
         cleaned_response = clean_json_response(response_text)
         parsed = json.loads(cleaned_response)
         if isinstance(parsed, list) and len(parsed) == len(routes):
-            cleaned = [str(item).strip() for item in parsed]
+            def extract_text(item):
+                if isinstance(item, dict) and "description" in item:
+                    return str(item["description"]).strip()
+                return str(item).strip()
+            cleaned = [extract_text(item) for item in parsed]
             if all(cleaned):
                 print("[AI 설명 생성 성공]", cleaned)
                 print("[DEBUG] build_route_explanations 탈출 (AI 설명)")
