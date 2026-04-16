@@ -4,6 +4,20 @@ from dotenv import load_dotenv
 # .env 파일 로드
 load_dotenv()
 
+def get_database_url():
+    url = os.getenv("DATABASE_URL")
+    if url:
+        return url
+    host = os.getenv("DB_HOST")
+    port = os.getenv("DB_PORT", "5432")
+    db = os.getenv("DB_DATABASE") or os.getenv("DB_NAME")
+    user = os.getenv("DB_USER")
+    pw = os.getenv("DB_PASSWORD")
+    if all([host, port, db, user, pw]):
+        return f"postgresql://{user}:{pw}@{host}:{port}/{db}"
+    return None
+
+
 class Settings:
     """
     애플리케이션 전역 설정 및 데이터 경로를 일괄 관리하는 클래스입니다.

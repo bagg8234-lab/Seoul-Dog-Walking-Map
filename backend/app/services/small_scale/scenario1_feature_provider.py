@@ -149,7 +149,8 @@ def collect_incident_profile(path_nodes: List, graph, hazard_radius_m: float = 1
     # walk_environment 테이블 기반 돌발 체크 추가
     import psycopg
     from psycopg.rows import dict_row
-    database_url = os.getenv("DATABASE_URL")
+    from app.core.config import get_database_url
+    database_url = get_database_url()
     if database_url and points:
         try:
             with psycopg.connect(database_url) as conn:

@@ -31,9 +31,11 @@ def build_graph_from_db(
     psycopg = _load_psycopg()
     if psycopg is None:
         raise ImportError("psycopg가 설치되어 있지 않습니다.")
-    database_url = database_url or os.getenv("DATABASE_URL")
+
+    from app.core.config import get_database_url
+    database_url = database_url or get_database_url()
     if not database_url:
-        raise ValueError("DATABASE_URL 환경변수 또는 인자 필요")
+        raise ValueError("DATABASE_URL 환경변수 또는 인자 필요 (또는 DB_HOST 등 5종)")
 
     G = nx.MultiGraph()
     with psycopg.connect(database_url) as conn:
