@@ -6,8 +6,7 @@
 
 ## 🏗 전체 시스템 아키텍처
 
-<img width="2387" height="1174" alt="전체 아키텍처" src="https://github.com/user-attachments/assets/8ff06124-c8b0-4696-b9ba-d14f0ad167fa" />
-
+![전체 아키텍처](./images/전체_아키텍처.png)
 
 | 구분 | 서비스 | 역할 |
 |------|--------|------|
