@@ -89,9 +89,10 @@ SecondProjectTeam3/
 │       ├── models/       # Pydantic 데이터 모델
 │       ├── services/     # 비즈니스 로직 (경사도 계산, 경로 탐색 등)
 │       └── main.py
-├── databricks/           # Databricks 노트북 및 스크립트
-│   ├── bronze_raw.ipynb  # Blob Storage → Bronze Delta 적재
-│   └── silver.ipynb      # 공간 조인 · 피처 엔지니어링 → Silver Delta
+├── databricks/
+│   ├── edges/            # OSM 도로 데이터 처리 (Bronze → Silver → Gold)
+│   ├── postgres/         # PostgreSQL 적재
+│   └── seoul_api/        # 서울시 API 데이터 처리 (Bronze → Silver → Gold)
 ├── data/                 # 공간 정보 데이터셋 (SHP, GPX, GeoJSON)
 ├── frontend/             # React Native 모바일 앱
 ├── image/                # README 이미지
