@@ -89,9 +89,10 @@ SecondProjectTeam3/
 │       ├── models/       # Pydantic data models
 │       ├── services/     # Business logic (slope calculation, route search, etc.)
 │       └── main.py
-├── databricks/           # Databricks notebooks & scripts
-│   ├── bronze_raw.ipynb  # Blob Storage → Bronze Delta ingestion
-│   └── silver.ipynb      # Spatial join & feature engineering → Silver Delta
+├── databricks/
+│   ├── edges/            # OSM road data processing (Bronze → Silver → Gold)
+│   ├── postgres/         # PostgreSQL ingestion
+│   └── seoul_api/        # Seoul API data processing (Bronze → Silver → Gold)
 ├── data/                 # Spatial datasets (SHP, GPX, GeoJSON)
 ├── frontend/             # React Native mobile app
 ├── image/                # README assets
