@@ -43,6 +43,8 @@ Azure Databricks에서 Apache Sedona를 활용하여 13만 개 이상의 도로 
 - **거칠기 점수**: 바닥 재질·자갈 함량 기반
 - **쿠션 지수**: 토양 깊이·배수 등급 기반
 
+> **▶️ 실행 순서**: `bronze_raw.ipynb` → `silver.ipynb`  
+> Sedona 설치 후 `%restart_python` 필수. 상세 내용은 [Databricks 파이프라인 가이드](./databricks/README.md) 참고.
 
 ### 3. 데이터 저장 (계층형 레이크)
 
@@ -87,7 +89,13 @@ SecondProjectTeam3/
 │       ├── models/       # Pydantic 데이터 모델
 │       ├── services/     # 비즈니스 로직 (경사도 계산, 경로 탐색 등)
 │       └── main.py
+├── databricks/           # Databricks 노트북 및 스크립트
+│   ├── bronze_raw.ipynb  # Blob Storage → Bronze Delta 적재
+│   └── silver.ipynb      # 공간 조인 · 피처 엔지니어링 → Silver Delta
 ├── data/                 # 공간 정보 데이터셋 (SHP, GPX, GeoJSON)
+├── frontend/             # React Native 모바일 앱
+├── image/                # README 이미지
+├── docs/                 # 프로젝트 문서
 ├── Dockerfile
 └── requirements.txt
 ```
@@ -103,10 +111,19 @@ uvicorn app.main:app --reload
 
 ---
 
-> **🔗 관련 문서**
-> * [데이터 정의서 (Data Dictionary)](https://github.com/bagg8234-lab/dog-walking-route-optimization/blob/main/description/data_dictionary.md) : 수집 및 가공 데이터의 컬럼/타입 정의
-> * [점수 산출 기준서 (Scoring Logic)](https://github.com/bagg8234-lab/dog-walking-route-optimization/blob/main/description/Scoring_Logic.md) : 열 위험도·거칠기·쿠션 점수 알고리즘 상세
+## 🔗 관련 문서
 
+| 문서 | 설명 |
+|------|------|
+| [데이터 정의서](./docs/data_dictionary.md) | 수집 및 가공 데이터의 컬럼/타입 정의 |
+| [점수 산출 기준서](./docs/scoring_logic.md) | 열 위험도·거칠기·쿠션 점수 알고리즘 상세 |
+| [백엔드 가이드](./docs/backend_guide.md) | 백엔드 구동 및 기능 안내 |
+| [프론트엔드 가이드](./docs/frontend_guide.md) | 프론트엔드 구동 및 화면 안내 |
+| [API 명세서](./docs/api_documentation.md) | API 엔드포인트 상세 명세 |
+| [Azure 배포 가이드](./docs/azure_developer_guide.md) | Azure 배포, CI/CD 구성 및 과금 관리 |
+| [Small Scale 개발 가이드](./docs/small_scale_dev_guide.md) | 루프 경로 기능 폴더 구조 및 임포트 경로 안내 |
+
+---
 
 ## 📦 기술 스택
 
