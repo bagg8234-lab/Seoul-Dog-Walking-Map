@@ -12,7 +12,7 @@ A backend system that recommends optimal walking routes for pet owners by analyz
 
 | Layer | Service | Role |
 |-------|---------|------|
-| Data Ingestion | Azure Data Factory | Automated collection from OSM, V-World, Seoul API, S-DoT |
+| Data Ingestion | Azure Data Factory | Automated collection from OSM, Seoul API, S-DoT |
 | Data Processing | Azure Databricks (Apache Sedona) | Spatial join & feature engineering |
 | Data Storage | Azure Blob Storage (raw / silver / gold) | Layered data lake |
 | Database | Azure Database for PostgreSQL (PostGIS) | Spatial data serving |
@@ -25,26 +25,42 @@ A backend system that recommends optimal walking routes for pet owners by analyz
 
 ### 1. Data Ingestion (Azure Data Factory)
 
-Automated collection from 4 public data sources via Azure Data Factory.
+Automated collection from 3 public data sources via Azure Data Factory.
 
 ![Data Factory Pipeline](./image/datafactory_pipeline.png)
 ![Data Factory Linked Services](./image/datafactory_Linked_serivce.png)
 
-- **OSM (Geofabrik)**: Road centerlines and pedestrian network (PBF format)
-- **V-World**: Soil material, gravel content, drainage grade and other terrain features
-- **Seoul Open Data API**: Pet-friendly cafes and nearby veterinary clinics
+- **OSM (Geofabrik)**: Road centerlines and pedestrian network (PBF format, updated every 2 months)
+- **Seoul Open Data API**: Real-time weather, congestion, road traffic, and event information
 - **S-DoT**: Real-time noise and vibration data along walking routes
+- **V-World** (local download): Soil material, gravel content, drainage grade and other terrain features — downloaded locally and uploaded to Blob Storage manually
 
 ### 2. Data Processing (Azure Databricks)
 
-Spatial joins across 130,000+ road segments using Apache Sedona on Azure Databricks, producing three dog-specific risk metrics:
+Two independent pipelines run on Azure Databricks.
+
+#### 📍 Terrain Pipeline (edges)
+
+Performs spatial joins between OSM road network and V-World terrain data to compute per-road walking metrics. Apache Sedona is used to process 130,000+ road segments.
 
 - **Heat Risk**: Based on surface temperature, solar absorption, and soil thermal properties
 - **Roughness Score**: Based on surface material and gravel content
 - **Cushion Index**: Based on soil depth and drainage grade
 
-> **▶️ Execution Order**: `bronze_raw.ipynb` → `silver.ipynb`  
-> `%restart_python` is required after Sedona installs. See [Databricks Pipeline Guide](./databricks/README.md) for details.
+Execution order: `vworld_local.ipynb` → `bronze_raw.ipynb` → `silver_large_scale.ipynb` / `silver_small_scale.ipynb` → `gold__scored.ipynb`
+
+`%restart_python` is required after Sedona installs. See [Medallion Pipeline Guide](./medallion/README.md) for details.
+
+#### 🌤 Real-time Environment Pipeline (seoul_api)
+
+Collects Seoul city data API and S-DoT sensor data to build real-time walking environment metrics per location. Joins weather, congestion, road traffic, and event data on AREA_NM, then attaches S-DoT noise/vibration aggregated at the district level.
+
+- **Weather**: Temperature, sensible temperature, fine dust, UV index, etc.
+- **Congestion**: Real-time population level and congestion message
+- **Road Traffic**: Average speed and congestion index per area
+- **Noise & Vibration**: District-level averages from S-DoT sensors
+
+Execution order: `storage_mount.ipynb` → `silver_citydata.ipynb` / `silver_sdot.ipynb` → `gold_sdot_join.ipynb`
 
 ### 3. Data Storage (Layered Data Lake)
 
@@ -89,10 +105,20 @@ SecondProjectTeam3/
 │       ├── models/       # Pydantic data models
 │       ├── services/     # Business logic (slope calculation, route search, etc.)
 │       └── main.py
-├── databricks/
-│   ├── edges/            # OSM road data processing (Bronze → Silver → Gold)
-│   ├── postgres/         # PostgreSQL ingestion
-│   └── seoul_api/        # Seoul API data processing (Bronze → Silver → Gold)
+├── medallion/
+│   ├── edges/            # Terrain pipeline (OSM + V-World)
+│   │   ├── vworld_local.ipynb       # V-World SHP local download & district filtering
+│   │   ├── bronze_raw.ipynb
+│   │   ├── silver_large_scale.ipynb
+│   │   ├── silver_small_scale.ipynb
+│   │   └── gold__scored.ipynb
+│   ├── seoul_api/        # Real-time environment pipeline (Seoul API + S-DoT)
+│   │   ├── storage_mount.ipynb
+│   │   ├── silver_citydata.ipynb
+│   │   ├── silver_sdot.ipynb
+│   │   └── gold_sdot_join.ipynb
+│   └── postgres/         # PostgreSQL ingestion
+│       └── postgres_load_realtime.ipynb
 ├── data/                 # Spatial datasets (SHP, GPX, GeoJSON)
 ├── frontend/             # React Native mobile app
 ├── image/                # README assets
@@ -123,6 +149,8 @@ uvicorn app.main:app --reload
 | [API Documentation](./docs/api_documentation.md) | API endpoint specifications |
 | [Azure Deployment Guide](./docs/azure_developer_guide.md) | Azure deployment, CI/CD setup, and cost management |
 | [Small Scale Dev Guide](./docs/small_scale_dev_guide.md) | Folder structure and import path guide for loop route features |
+
+---
 
 ## 📦 Tech Stack
 
