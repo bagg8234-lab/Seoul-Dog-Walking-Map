@@ -2,7 +2,7 @@
 
 # 🐾 Pet-Walk: 반려동물 산책로 위험도 분석 및 추천 시스템
 
-반려동물과 함께 쾌적하고 안전한 산책을 즐길 수 있도록, **지형 정보(경사도·바닥 재질), 실시간 기상 데이터, 인근 시설 정보**를 종합 분석하여 최적의 산책로를 추천하는 백엔드 시스템입니다.
+반려동물과 안전한 안전한 산책을 즐길 수 있도록, **지형 정보(경사도·바닥 재질), 실시간 기상 데이터, 인근 시설 정보**를 종합 분석하여 최적의 산책로를 추천하는 백엔드 시스템입니다.
 
 ---
 
@@ -12,7 +12,7 @@
 
 | 구분 | 서비스 | 역할 |
 |------|--------|------|
-| 데이터 수집 | Azure Data Factory | OSM, V-World, 서울 API, S-DoT 자동 수집 |
+| 데이터 수집 | Azure Data Factory | OSM, 서울 API, S-DoT 자동 수집 |
 | 데이터 처리 | Azure Databricks (Apache Sedona) | 공간 조인 및 지표 산출 |
 | 데이터 저장 | Azure Blob Storage (raw / silver / gold) | 계층형 데이터 레이크 |
 | DB | Azure Database for PostgreSQL (PostGIS) | 공간 데이터 적재 및 서빙 |
@@ -30,21 +30,35 @@ Azure Data Factory를 활용하여 4개 소스에서 공공 데이터를 자동 
 ![Data Factory 파이프라인](./image/datafactory_pipeline.png)
 ![Data Factory 연결 서비스](./image/datafactory_Linked_serivce.png)
 
-- **OSM (Geofabrik)**: 도로 중심선 및 보행로 네트워크 (PBF 포맷)
-- **V-World**: 토양 재질, 자갈 함량, 배수 등급 등 지형 특성
-- **서울 열린데이터 광장 API**: 반려동물 동반 카페, 동물병원 시설 정보
+- **OSM (Geofabrik)**: 도로 중심선 및 보행로 네트워크 (PBF 포맷)_2개월 주기로 업데이트됨
+- **서울 열린데이터 광장 API**: 실시간 날씨·혼잡도·도로소통·이벤트 정보
 - **S-DoT**: 산책로 인근 실시간 소음·진동 데이터
 
 ### 2. 데이터 처리 (Azure Databricks)
 
-Azure Databricks에서 Apache Sedona를 활용하여 13만 개 이상의 도로 데이터에 대해 공간 조인(Spatial Join)을 수행하고, 반려견 특성을 고려한 핵심 지표를 산출합니다.
+Azure Databricks에서 두 개의 독립적인 파이프라인을 운영합니다.
+
+#### 📍 지형 파이프라인 (edges)
+
+OSM 도로 네트워크와 V-World 지형 데이터를 공간 조인하여 도로별 산책 지표를 산출합니다. Apache Sedona를 활용해 13만 개 이상의 도로 데이터에 대해 공간 조인(Spatial Join)을 수행합니다.
 
 - **열 위험도**: 기온·복사열·토양 흡열 특성 기반
 - **거칠기 점수**: 바닥 재질·자갈 함량 기반
 - **쿠션 지수**: 토양 깊이·배수 등급 기반
 
-> **▶️ 실행 순서**: `bronze_raw.ipynb` → `silver.ipynb`  
-> Sedona 설치 후 `%restart_python` 필수. 상세 내용은 [Databricks 파이프라인 가이드](./databricks/README.md) 참고.
+실행 순서: `bronze_raw.ipynb` → `silver_large_scale.ipynb` / `silver_small_scale.ipynb` → `gold__scored.ipynb`
+
+Sedona 설치 후 `%restart_python` 필수. 상세 내용은 [Databricks 파이프라인 가이드](./databricks/README.md) 참고.
+
+#### 🌤 실시간 환경 파이프라인 (seoul_api)
+
+서울 도시데이터 API와 S-DoT 센서 데이터를 수집해 장소별 실시간 보행 환경 지표를 만듭니다. 장소명(AREA_NM) 기준으로 날씨·혼잡도·도로소통·이벤트를 조인하고, 자치구 단위로 집계한 S-DoT 소음·진동 데이터를 붙입니다.
+
+- **날씨**: 기온, 체감온도, 미세먼지, 자외선 등
+- **혼잡도**: 실시간 유동인구 수준 및 혼잡 메시지
+- **소음·진동**: S-DoT 센서 기반 구 단위 평균값
+
+실행 순서: `storage_mount.ipynb` → `silver_citydata.ipynb` / `silver_sdot.ipynb` → `gold_sdot_join.ipynb`
 
 ### 3. 데이터 저장 (계층형 레이크)
 
@@ -90,9 +104,18 @@ SecondProjectTeam3/
 │       ├── services/     # 비즈니스 로직 (경사도 계산, 경로 탐색 등)
 │       └── main.py
 ├── databricks/
-│   ├── edges/            # OSM 도로 데이터 처리 (Bronze → Silver → Gold)
-│   ├── postgres/         # PostgreSQL 적재
-│   └── seoul_api/        # 서울시 API 데이터 처리 (Bronze → Silver → Gold)
+│   ├── edges/            # 지형 파이프라인 (OSM + V-World)
+│   │   ├── bronze_raw.ipynb
+│   │   ├── silver_large_scale.ipynb
+│   │   ├── silver_small_scale.ipynb
+│   │   └── gold__scored.ipynb
+│   ├── seoul_api/        # 실시간 환경 파이프라인 (서울 API + S-DoT)
+│   │   ├── storage_mount.ipynb
+│   │   ├── silver_citydata.ipynb
+│   │   ├── silver_sdot.ipynb
+│   │   └── gold_sdot_join.ipynb
+│   └── postgres/         # PostgreSQL 적재
+│       └── postgres_load_realtime.ipynb
 ├── data/                 # 공간 정보 데이터셋 (SHP, GPX, GeoJSON)
 ├── frontend/             # React Native 모바일 앱
 ├── image/                # README 이미지
