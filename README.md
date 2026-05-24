@@ -28,7 +28,7 @@ Apache Sedona(Databricks)로 13만 건 이상의 공간 조인을 처리하는 A
 
 ## 🏗 전체 시스템 아키텍처
 
-![전체 아키텍처](./image/overall_architecture_.png)
+![전체 아키텍처](./image/overall_architecture.png)
 
 | 구분 | 서비스 | 역할 |
 |------|--------|------|
