@@ -203,7 +203,7 @@ DOCKER_REGISTRY_SERVER_URL / DOCKER_REGISTRY_SERVER_USERNAME / DOCKER_REGISTRY_S
 
 ### 1. 홈 — 주변 산책길
 
-![주변 산책길](./image/주변_산책길.png)
+![주변 산책길](./image/주변 산책길.png)
 
 현재 위치 주변 산책로·공원을 지도에 표시하고, 날씨·미세먼지 정보를 상단에 표시합니다.
 
@@ -219,7 +219,7 @@ DOCKER_REGISTRY_SERVER_URL / DOCKER_REGISTRY_SERVER_USERNAME / DOCKER_REGISTRY_S
 
 ### 3. 산책 추천 받기
 
-![추천 경로 탭](./image/추천경로받는_탭.png)
+![추천 경로 탭](./image/추천경로받는 탭.png)
 
 출발 위치·산책 시간·혼잡도 선호·경사도 선호를 설정하고, 저장된 반려견 프로필을 자동 반영합니다.
 
